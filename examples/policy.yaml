@@ -1,0 +1,6 @@
+rules:
+  - name: block_sensitive_action
+    tool: resource.delete
+    attributes:
+      risk_level: high
+    decision: deny
