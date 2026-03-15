@@ -6,7 +6,7 @@ readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.11"
 authors = [
-    { name = "Your Name", email = "you@example.com" },
+    { name = "Po-Yao Huang", email = "poyaohg0705@gmail.com" },
 ]
 keywords = ["agents", "policy", "ai", "governance", "llm"]
 classifiers = [
@@ -26,9 +26,9 @@ dependencies = ["pyyaml>=6.0", "aiofiles>=24.1"]
 test = ["pytest>=7.0", "pytest-asyncio>=0.24"]
 
 [project.urls]
-Homepage = "https://github.com/yourusername/agentguard"
-Repository = "https://github.com/yourusername/agentguard"
-Issues = "https://github.com/yourusername/agentguard/issues"
+Homepage = "https://github.com/poyao0705/agentguard"
+Repository = "https://github.com/poyao0705/agentguard"
+Issues = "https://github.com/poyao0705/agentguard/issues"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
