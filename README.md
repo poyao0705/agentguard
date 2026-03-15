@@ -1,25 +1,25 @@
-# AgentGuard
+# GuardianAngel
 
 **A lightweight Python SDK for governing AI agent tool execution.**
 
-AgentGuard intercepts agent actions, evaluates policy, and decides whether they should be **allowed**, **denied**, or **require approval** — before the tool runs.
+GuardianAngel intercepts agent actions, evaluates policy, and decides whether they should be **allowed**, **denied**, or **require approval** — before the tool runs.
 
 ## Why
 
-Autonomous AI agents can call tools — merge PRs, delete branches, send messages, deploy services. AgentGuard gives you deterministic, policy-based control over what agents are allowed to do.
+Autonomous AI agents can call tools — merge PRs, delete branches, send messages, deploy services. GuardianAngel gives you deterministic, policy-based control over what agents are allowed to do.
 
 ## Install
 
 ```bash
-pip install agentguard-python
+pip install guardian-angel
 ```
 
 ## Quickstart
 
 ```python
-from agentguard import AgentGuard, ActionRequest, Rule, DENY
+from guardian_angel import GuardianAngel, ActionRequest, Rule, DENY
 
-guard = AgentGuard(rules=[
+guard = GuardianAngel(rules=[
   Rule(
     name="block_sensitive_action",
     tool="resource.delete",
@@ -56,9 +56,9 @@ rules:
 Load and evaluate:
 
 ```python
-from agentguard import AgentGuard, ActionRequest
+from guardian_angel import GuardianAngel, ActionRequest
 
-guard = AgentGuard.from_yaml("policy.yaml")
+guard = GuardianAngel.from_yaml("policy.yaml")
 decision = guard.authorize(
   ActionRequest(tool="resource.delete", attributes={"risk_level": "high"})
 )
@@ -70,7 +70,7 @@ print(decision.status)  # "deny"
 Wrap Python functions to enforce policy automatically:
 
 ```python
-guard = AgentGuard.from_yaml("policy.yaml")
+guard = GuardianAngel.from_yaml("policy.yaml")
 
 @guard.tool(name="resource.delete")
 def delete_resource(resource_id: str, *, attributes: dict | None = None):
@@ -88,7 +88,7 @@ Agent tool call
       ↓
 ActionRequest
       ↓
-AgentGuard.authorize(request)
+GuardianAngel.authorize(request)
       ↓
 Decision (allow / deny / require_approval)
 ```
@@ -99,7 +99,7 @@ Rules are evaluated **top to bottom, first match wins**. If no rule matches, the
 
 - **v0.1** — Local policy evaluation, YAML rules, decorator *(current)*
 - **v0.2** — Richer identity / resource models, better validation
-- **v0.3** — `agentguard simulate` CLI, policy testing
+- **v0.3** — `guardian-angel simulate` CLI, policy testing
 - **v0.4** — Lightweight framework adapters (LangGraph, OpenAI, CrewAI)
 - **v0.5+** — Remote policy sources, audit sinks, approval stores
 

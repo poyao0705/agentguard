@@ -2,11 +2,11 @@
 
 import os
 
-from agentguard import ActionRequest, AgentGuard
+from guardian_angel import ActionRequest, GuardianAngel
 
 # Load policy from YAML
 policy_path = os.path.join(os.path.dirname(__file__), "policy.yaml")
-guard = AgentGuard.from_yaml(policy_path)
+guard = GuardianAngel.from_yaml(policy_path)
 
 # Evaluate some requests
 requests = [

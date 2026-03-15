@@ -2,11 +2,11 @@
 
 import os
 
-from agentguard import AgentGuard, PolicyDeniedError
+from guardian_angel import GuardianAngel, PolicyDeniedError
 
 # Load policy from YAML
 policy_path = os.path.join(os.path.dirname(__file__), "policy.yaml")
-guard = AgentGuard.from_yaml(policy_path)
+guard = GuardianAngel.from_yaml(policy_path)
 
 
 @guard.tool(name="resource.delete")

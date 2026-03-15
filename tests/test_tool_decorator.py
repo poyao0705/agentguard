@@ -1,10 +1,10 @@
 import pytest
 
-from agentguard import (
+from guardian_angel import (
     ALLOW,
     DENY,
     REQUIRE_APPROVAL,
-    AgentGuard,
+    GuardianAngel,
     ApprovalRequiredError,
     PolicyDeniedError,
     Rule,
@@ -12,7 +12,7 @@ from agentguard import (
 
 
 def _make_guard(*rules):
-    return AgentGuard(rules=list(rules))
+    return GuardianAngel(rules=list(rules))
 
 
 class TestToolDecorator:

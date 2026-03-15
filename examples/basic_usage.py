@@ -1,11 +1,11 @@
 """Basic usage: create rules manually, authorize a request, inspect the decision."""
 
-from agentguard import (
+from guardian_angel import (
     ALLOW,
     DENY,
     REQUIRE_APPROVAL,
     ActionRequest,
-    AgentGuard,
+    GuardianAngel,
     Rule,
 )
 
@@ -25,7 +25,7 @@ rules = [
     ),
 ]
 
-guard = AgentGuard(rules=rules)
+guard = GuardianAngel(rules=rules)
 
 # Evaluate requests
 requests = [

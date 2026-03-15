@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 
-class AgentGuardError(Exception):
-    """Base exception for AgentGuard."""
+class GuardianAngelError(Exception):
+    """Base exception for GuardianAngel."""
 
 
-class PolicyDeniedError(AgentGuardError):
+class PolicyDeniedError(GuardianAngelError):
     """Raised when a policy denies an action."""
 
     def __init__(self, decision):
@@ -13,7 +13,7 @@ class PolicyDeniedError(AgentGuardError):
         super().__init__(decision.reason or "Action denied by policy")
 
 
-class ApprovalRequiredError(AgentGuardError):
+class ApprovalRequiredError(GuardianAngelError):
     """Raised when a policy requires approval for an action."""
 
     def __init__(self, decision):
@@ -21,5 +21,5 @@ class ApprovalRequiredError(AgentGuardError):
         super().__init__(decision.reason or "Action requires approval")
 
 
-class InvalidPolicyError(AgentGuardError):
+class InvalidPolicyError(GuardianAngelError):
     """Raised when a policy definition is malformed or invalid."""

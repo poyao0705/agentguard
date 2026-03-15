@@ -1,11 +1,11 @@
 from .decision import ALLOW, DENY, REQUIRE_APPROVAL, Decision
 from .exceptions import (
-    AgentGuardError,
+    GuardianAngelError,
     ApprovalRequiredError,
     InvalidPolicyError,
     PolicyDeniedError,
 )
-from .guard import AgentGuard
+from .guard import GuardianAngel
 from .request import ActionRequest
 from .rule import Rule
 
@@ -14,8 +14,8 @@ __all__ = [
     "DENY",
     "REQUIRE_APPROVAL",
     "ActionRequest",
-    "AgentGuard",
-    "AgentGuardError",
+    "GuardianAngel",
+    "GuardianAngelError",
     "ApprovalRequiredError",
     "Decision",
     "InvalidPolicyError",

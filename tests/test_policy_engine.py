@@ -1,4 +1,4 @@
-from agentguard import (
+from guardian_angel import (
     ALLOW,
     DENY,
     REQUIRE_APPROVAL,
@@ -6,7 +6,7 @@ from agentguard import (
     Decision,
     Rule,
 )
-from agentguard.policy_engine import PolicyEngine
+from guardian_angel.policy_engine import PolicyEngine
 
 
 class TestRuleMatching:

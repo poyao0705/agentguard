@@ -5,12 +5,12 @@ from .rule import Rule
 from .tool_decorator import make_tool_decorator
 
 
-class AgentGuard:
-    """Main entry point for the AgentGuard SDK.
+class GuardianAngel:
+    """Main entry point for the GuardianAngel SDK.
 
     Usage::
 
-        guard = AgentGuard(rules=[...])
+        guard = GuardianAngel(rules=[...])
         decision = guard.authorize(request)
     """
 
@@ -18,8 +18,8 @@ class AgentGuard:
         self.engine = PolicyEngine(rules or [])
 
     @classmethod
-    def from_yaml(cls, path: str) -> AgentGuard:
-        """Create an AgentGuard instance from a YAML policy file."""
+    def from_yaml(cls, path: str) -> GuardianAngel:
+        """Create a GuardianAngel instance from a YAML policy file."""
         from .yaml_loader import load_policy_file
 
         rules = load_policy_file(path)
