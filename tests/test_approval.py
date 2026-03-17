@@ -421,12 +421,12 @@ class TestToolDecoratorWithApproval:
         )
 
         @guard.tool(name="deploy")
-        def deploy(target, *, request_id=None):
+        def deploy(target, *, __guard_request_id__=None):
             assert target == "prod"
-            assert request_id == "tool-req-1"
+            assert __guard_request_id__ == "tool-req-1"
             return "deployed"
 
-        deploy("prod", request_id="tool-req-1")
+        deploy("prod", __guard_request_id__="tool-req-1")
         assert captured[0].approval_id
         assert captured[0].action_request.request_id == "tool-req-1"
         assert captured[0].action_request.tool == "deploy"

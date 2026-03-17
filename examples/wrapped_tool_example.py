@@ -47,14 +47,14 @@ guard = GuardianAngel.from_yaml(
 def delete_resource(
     resource_id: str,
     *,
-    attributes: dict | None = None,
-    request_id: str | None = None,
+    __guard_attributes__: dict | None = None,
+    __guard_request_id__: str | None = None,
 ):
     return {
         "deleted": True,
         "resource_id": resource_id,
-        "request_id": request_id,
-        "attributes": attributes or {},
+        "request_id": __guard_request_id__,
+        "attributes": __guard_attributes__ or {},
     }
 
 
@@ -62,14 +62,14 @@ def delete_resource(
 def update_resource(
     resource_id: str,
     *,
-    attributes: dict | None = None,
-    request_id: str | None = None,
+    __guard_attributes__: dict | None = None,
+    __guard_request_id__: str | None = None,
 ):
     return {
         "updated": True,
         "resource_id": resource_id,
-        "request_id": request_id,
-        "attributes": attributes or {},
+        "request_id": __guard_request_id__,
+        "attributes": __guard_attributes__ or {},
     }
 
 
@@ -78,8 +78,8 @@ print("1. Cross-tenant delete (condition + value_from -> deny):")
 try:
     delete_resource(
         "doc-123",
-        request_id="req-101",
-        attributes={
+        __guard_request_id__="req-101",
+        __guard_attributes__={
             "subject.tenant_id": "acme",
             "resource.tenant_id": "globex",
             "resource.environment": "prod",
@@ -96,8 +96,8 @@ print("2. Risky prod delete (all + any + not -> deny):")
 try:
     delete_resource(
         "doc-456",
-        request_id="req-102",
-        attributes={
+        __guard_request_id__="req-102",
+        __guard_attributes__={
             "subject.tenant_id": "acme",
             "resource.tenant_id": "acme",
             "resource.environment": "prod",
@@ -113,8 +113,8 @@ except PolicyDeniedError as e:
 print("3. Safe prod delete (not clause blocks the deny rule, so allow):")
 result = delete_resource(
     "doc-789",
-    request_id="req-103",
-    attributes={
+    __guard_request_id__="req-103",
+    __guard_attributes__={
         "subject.tenant_id": "acme",
         "resource.tenant_id": "acme",
         "resource.environment": "prod",
@@ -129,8 +129,8 @@ print(f"   Result: {result}\n")
 print("4. Prod update requiring approval (auto-approved via handler):")
 result = update_resource(
     "doc-999",
-    request_id="req-104",
-    attributes={
+    __guard_request_id__="req-104",
+    __guard_attributes__={
         "resource.environment": "prod",
         "context.change_type": "permissions",
         "context.risk_score": 5,

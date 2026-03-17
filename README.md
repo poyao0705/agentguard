@@ -223,18 +223,35 @@ Behavior:
 
 ### With the `@guard.tool()` / `@guard.async_tool()` decorator
 
-The decorator routes `require_approval` decisions through the handler automatically:
+The decorator routes `require_approval` decisions through the handler automatically.
+
+Two reserved keyword arguments pass policy context into the decorator — use `__guard_attributes__` for the policy attribute dict and `__guard_request_id__` for the tracing ID. Using dunder names avoids clashing with your own function arguments (e.g. an `attributes` param that means something different to your tool):
 
 ```python
 # Sync decorator — for sync functions + sync handler
 @guard.tool(name="resource.update")
-def update_resource(resource_id, *, attributes=None, request_id=None):
+def update_resource(resource_id, *, __guard_attributes__=None, __guard_request_id__=None):
     return {"updated": True, "resource_id": resource_id}
+
+update_resource(
+    "doc-1",
+    __guard_attributes__={"resource.environment": "prod", "subject.role": "developer"},
+    __guard_request_id__="req-1",
+)
 
 # Async decorator — for async functions, works with sync or async handler
 @guard.async_tool(name="resource.update")
-async def update_resource(resource_id, *, attributes=None, request_id=None):
+async def update_resource(resource_id, *, __guard_attributes__=None, __guard_request_id__=None):
     return {"updated": True, "resource_id": resource_id}
+```
+
+Because the reserved kwargs use dunder names, your tool can freely have its own `attributes` or `request_id` arguments without collision:
+
+```python
+@guard.tool(name="html.render")
+def render(tag: str, attributes: dict, *, __guard_attributes__=None):
+    # `attributes` here is HTML attributes — no clash with policy context
+    ...
 ```
 
 Without a handler, `ApprovalRequiredError` is raised as before.

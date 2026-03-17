@@ -326,10 +326,10 @@ class TestAsyncToolDecorator:
         )
 
         @guard.async_tool(name="deploy")
-        async def deploy(target, *, request_id=None):
-            return f"deployed {target} {request_id}"
+        async def deploy(target, *, __guard_request_id__=None):
+            return f"deployed {target} {__guard_request_id__}"
 
-        await deploy("prod", request_id="async-tool-req-1")
+        await deploy("prod", __guard_request_id__="async-tool-req-1")
         assert captured[0].approval_id
         assert captured[0].action_request.request_id == "async-tool-req-1"
         assert captured[0].action_request.tool == "deploy"

@@ -137,19 +137,19 @@ print("=== 4. Use the same guard in a tool wrapper ===\n")
 
 
 @guard.tool(name="resource.update")
-def update_resource(resource_id: str, *, attributes=None, request_id=None):
+def update_resource(resource_id: str, *, __guard_attributes__=None, __guard_request_id__=None):
     return {
         "updated": True,
         "resource_id": resource_id,
-        "request_id": request_id,
-        "attributes": attributes or {},
+        "request_id": __guard_request_id__,
+        "attributes": __guard_attributes__ or {},
     }
 
 
 tool_result = update_resource(
     "doc-777",
-    request_id="req-pipeline-005",
-    attributes={
+    __guard_request_id__="req-pipeline-005",
+    __guard_attributes__={
         "resource.environment": "prod",
         "context.change_type": "schema",
         "context.risk_score": 8,
@@ -164,16 +164,16 @@ print("=== 5. Denial still blocks execution ===\n")
 
 
 @guard.tool(name="resource.delete")
-def delete_resource(resource_id: str, *, attributes=None, request_id=None):
-    _ = (attributes, request_id)
+def delete_resource(resource_id: str, *, __guard_attributes__=None, __guard_request_id__=None):
+    _ = (__guard_attributes__, __guard_request_id__)
     return {"deleted": True, "resource_id": resource_id}
 
 
 try:
     delete_resource(
         "doc-888",
-        request_id="req-pipeline-006",
-        attributes={
+        __guard_request_id__="req-pipeline-006",
+        __guard_attributes__={
             "subject.tenant_id": "acme",
             "resource.tenant_id": "globex",
             "resource.environment": "prod",

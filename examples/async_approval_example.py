@@ -145,15 +145,15 @@ async def main():
     print("=== @guard.async_tool() examples ===\n")
 
     @guard.async_tool(name="resource.update")
-    async def update_resource(resource_id, *, attributes=None, request_id=None):
-        _ = (attributes, request_id)
+    async def update_resource(resource_id, *, __guard_attributes__=None, __guard_request_id__=None):
+        _ = (__guard_attributes__, __guard_request_id__)
         # Simulate async work
         await asyncio.sleep(0.01)
         return {"updated": True, "resource_id": resource_id}
 
     @guard_reject.async_tool(name="resource.update")
-    async def update_resource_strict(resource_id, *, attributes=None, request_id=None):
-        _ = (attributes, request_id)
+    async def update_resource_strict(resource_id, *, __guard_attributes__=None, __guard_request_id__=None):
+        _ = (__guard_attributes__, __guard_request_id__)
         await asyncio.sleep(0.01)
         return {"updated": True, "resource_id": resource_id}
 
@@ -165,12 +165,12 @@ async def main():
     }
 
     print("4. Async auto-approved → function executes:")
-    result = await update_resource("doc-1", request_id="req-async-4", attributes=approval_attrs)
+    result = await update_resource("doc-1", __guard_request_id__="req-async-4", __guard_attributes__=approval_attrs)
     print(f"   Result: {result}\n")
 
     print("5. Async rejected → PolicyDeniedError:")
     try:
-        await update_resource_strict("doc-2", request_id="req-async-5", attributes=approval_attrs)
+        await update_resource_strict("doc-2", __guard_request_id__="req-async-5", __guard_attributes__=approval_attrs)
     except PolicyDeniedError as e:
         print(f"   PolicyDeniedError: {e}\n")
 
@@ -186,14 +186,14 @@ async def main():
     )
 
     @guard_no_handler.async_tool(name="resource.update")
-    async def update_no_handler(resource_id, *, attributes=None, request_id=None):
-        _ = (attributes, request_id)
+    async def update_no_handler(resource_id, *, __guard_attributes__=None, __guard_request_id__=None):
+        _ = (__guard_attributes__, __guard_request_id__)
         await asyncio.sleep(0.01)
         return {"updated": True, "resource_id": resource_id}
 
     print("6. No handler registered:")
     try:
-        await update_no_handler("doc-3", request_id="req-async-6", attributes=approval_attrs)
+        await update_no_handler("doc-3", __guard_request_id__="req-async-6", __guard_attributes__=approval_attrs)
     except ApprovalRequiredError as e:
         print(f"   ApprovalRequiredError: {e}\n")
 

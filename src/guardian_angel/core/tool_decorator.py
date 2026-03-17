@@ -12,8 +12,8 @@ from .request import ActionRequest
 
 def _build_request_and_evaluate(guard, name, kwargs):
     """Shared logic: build an ActionRequest, evaluate policy, return (decision, request)."""
-    attributes = kwargs.get("attributes") or {}
-    request_id = kwargs.get("request_id")
+    attributes = kwargs.get("__guard_attributes__") or {}
+    request_id = kwargs.get("__guard_request_id__")
 
     request = ActionRequest(
         tool=name,

@@ -155,22 +155,22 @@ guard_reject = GuardianAngel.from_yaml(
 
 
 @guard.tool(name="resource.update")
-def update_resource(resource_id, *, attributes=None, request_id=None):
+def update_resource(resource_id, *, __guard_attributes__=None, __guard_request_id__=None):
     return {
         "updated": True,
         "resource_id": resource_id,
-        "request_id": request_id,
-        "attributes": attributes or {},
+        "request_id": __guard_request_id__,
+        "attributes": __guard_attributes__ or {},
     }
 
 
 @guard_reject.tool(name="resource.update")
-def update_resource_strict(resource_id, *, attributes=None, request_id=None):
+def update_resource_strict(resource_id, *, __guard_attributes__=None, __guard_request_id__=None):
     return {
         "updated": True,
         "resource_id": resource_id,
-        "request_id": request_id,
-        "attributes": attributes or {},
+        "request_id": __guard_request_id__,
+        "attributes": __guard_attributes__ or {},
     }
 
 
@@ -182,12 +182,12 @@ approval_attrs = {
 }
 
 print("4. Auto-approved → function executes:")
-result = update_resource("doc-1", request_id="req-304", attributes=approval_attrs)
+result = update_resource("doc-1", __guard_request_id__="req-304", __guard_attributes__=approval_attrs)
 print(f"   Result: {result}\n")
 
 print("5. Auto-rejected → PolicyDeniedError:")
 try:
-    update_resource_strict("doc-2", request_id="req-305", attributes=approval_attrs)
+    update_resource_strict("doc-2", __guard_request_id__="req-305", __guard_attributes__=approval_attrs)
 except PolicyDeniedError as e:
     print(f"   PolicyDeniedError: {e}\n")
 
@@ -204,17 +204,17 @@ guard_no_handler = GuardianAngel.from_yaml(
 
 
 @guard_no_handler.tool(name="resource.update")
-def update_no_handler(resource_id, *, attributes=None, request_id=None):
+def update_no_handler(resource_id, *, __guard_attributes__=None, __guard_request_id__=None):
     return {
         "updated": True,
         "resource_id": resource_id,
-        "request_id": request_id,
-        "attributes": attributes or {},
+        "request_id": __guard_request_id__,
+        "attributes": __guard_attributes__ or {},
     }
 
 
 print("6. No handler registered:")
 try:
-    update_no_handler("doc-3", request_id="req-306", attributes=approval_attrs)
+    update_no_handler("doc-3", __guard_request_id__="req-306", __guard_attributes__=approval_attrs)
 except ApprovalRequiredError as e:
     print(f"   ApprovalRequiredError: {e}\n")

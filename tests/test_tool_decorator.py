@@ -68,16 +68,16 @@ class TestToolDecorator:
         )
 
         @guard.tool(name="deploy")
-        def deploy(target, *, attributes=None):
-            _ = (target, attributes)
+        def deploy(target, *, __guard_attributes__=None):
+            _ = (target, __guard_attributes__)
             return "deployed"
 
         # Should be blocked when resource.environment=prod
         with pytest.raises(PolicyDeniedError):
-            deploy("app", attributes={"resource.environment": "prod"})
+            deploy("app", __guard_attributes__={"resource.environment": "prod"})
 
         # Should be allowed when resource.environment=staging (no matching rule)
-        result = deploy("app", attributes={"resource.environment": "staging"})
+        result = deploy("app", __guard_attributes__={"resource.environment": "staging"})
         assert result == "deployed"
 
     def test_request_id_is_passed_into_request(self):
@@ -91,15 +91,15 @@ class TestToolDecorator:
         )
 
         @guard.tool(name="github.pr")
-        def merge_pr(pr_id, *, attributes=None, request_id=None):
-            _ = (pr_id, attributes, request_id)
+        def merge_pr(pr_id, *, __guard_attributes__=None, __guard_request_id__=None):
+            _ = (pr_id, __guard_attributes__, __guard_request_id__)
             return "merged"
 
         with pytest.raises(PolicyDeniedError):
             merge_pr(
                 "42",
-                request_id="req-42",
-                attributes={"context.risk_level": "high"},
+                __guard_request_id__="req-42",
+                __guard_attributes__={"context.risk_level": "high"},
             )
 
     def test_decorator_preserves_function_name(self):
