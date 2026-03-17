@@ -18,7 +18,6 @@ from guardian_angel import (
 )
 from guardian_angel.core.decision import Decision
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -70,6 +69,11 @@ class _ExpireHandler:
             approval_id=request.approval_id,
             status=ApprovalStatus.EXPIRED,
         )
+
+
+class _BrokenHandler:
+    def submit(self, request: ApprovalRequest) -> ApprovalResponse:
+        raise RuntimeError("approval service unavailable")
 
 
 # ---------------------------------------------------------------------------
@@ -280,6 +284,39 @@ class TestRequestApproval:
         )
         assert req.approval_id == "approval-123"
 
+    def test_approval_backend_failure_defaults_to_deny(self):
+        guard = GuardianAngel(
+            rules=[Rule(name="r", tool="deploy", decision=DecisionStatus.REQUIRE_APPROVAL)],
+            approval_handler=_BrokenHandler(),
+        )
+        with pytest.raises(PolicyDeniedError) as exc_info:
+            guard.request_approval(ActionRequest(tool="deploy"))
+        assert exc_info.value.decision.source == "approval_error"
+
+    def test_approval_backend_failure_can_fallback_to_allow(self):
+        from guardian_angel import GuardConfig
+
+        guard = GuardianAngel(
+            rules=[Rule(name="r", tool="deploy", decision=DecisionStatus.REQUIRE_APPROVAL)],
+            approval_handler=_BrokenHandler(),
+            config=GuardConfig(on_approval_error=DecisionStatus.ALLOW),
+        )
+        response = guard.request_approval(ActionRequest(tool="deploy"))
+        assert response.status == ApprovalStatus.APPROVED
+        assert response.approved_by == "guardian_angel_fallback"
+
+    def test_approval_backend_failure_can_require_approval(self):
+        from guardian_angel import GuardConfig
+
+        guard = GuardianAngel(
+            rules=[Rule(name="r", tool="deploy", decision=DecisionStatus.REQUIRE_APPROVAL)],
+            approval_handler=_BrokenHandler(),
+            config=GuardConfig(on_approval_error=DecisionStatus.REQUIRE_APPROVAL),
+        )
+        with pytest.raises(ApprovalRequiredError) as exc_info:
+            guard.request_approval(ActionRequest(tool="deploy"))
+        assert exc_info.value.decision.source == "approval_error"
+
 
 # ---------------------------------------------------------------------------
 # from_yaml classmethod
@@ -362,7 +399,7 @@ class TestToolDecoratorWithApproval:
 
         @guard.tool(name="deploy")
         def deploy(target):
-            return "deployed"
+            return f"deployed {target}"
 
         with pytest.raises(ApprovalRequiredError):
             deploy("prod")

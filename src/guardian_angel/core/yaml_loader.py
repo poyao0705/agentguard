@@ -6,13 +6,14 @@ import yaml
 
 from .decision import DecisionStatus
 from .exceptions import InvalidPolicyError
-from .predicates import AllOf, AnyOf, Condition, Not, Predicate
+from .predicates import ALLOWED_OPERATORS, AllOf, AnyOf, Condition, Not, Predicate
 from .rule import Rule
 
 _REQUIRED_RULE_FIELDS = ("name", "tool", "decision")
 _PREDICATE_FIELDS = {"when", "all", "any", "unless", "not"}
 _ALLOWED_RULE_FIELDS = {*_REQUIRED_RULE_FIELDS, "attributes", *_PREDICATE_FIELDS}
 _CONDITION_FIELDS = {f.name for f in dataclasses.fields(Condition)}
+_LOGICAL_PREDICATE_FIELDS = ("all", "any", "not", "unless")
 
 
 def load_policy_file(path: str) -> list[Rule]:
@@ -101,11 +102,11 @@ def _require_non_empty_string(entry: dict, field: str, index: int) -> str:
 def _parse_decision(raw_value, index: int) -> DecisionStatus:
     try:
         return DecisionStatus(raw_value)
-    except ValueError:
+    except ValueError as exc:
+        allowed_values = sorted((status.value for status in DecisionStatus))
         raise InvalidPolicyError(
-            f"Rule at index {index}: 'decision' must be one of "
-            f"{sorted(s.value for s in DecisionStatus)!r}, got {raw_value!r}"
-        )
+            f"Rule at index {index}: 'decision' must be one of {allowed_values!r}, got {raw_value!r}"
+        ) from exc
 
 
 def _parse_rule_predicate(entry: dict, index: int) -> Predicate | None:
@@ -119,36 +120,37 @@ def _parse_rule_predicate(entry: dict, index: int) -> Predicate | None:
         )
 
     field = predicate_fields[0]
-    return _parse_predicate(entry[field], field=field, context=f"Rule at index {index}")
+    return _parse_predicate(entry[field], field=field, context=f"rules[{index}].{field}")
 
 
 def _parse_predicate(raw_predicate, *, field: str, context: str) -> Predicate:
     if field == "when":
-        if not isinstance(raw_predicate, dict):
-            raise InvalidPolicyError(f"{context}: 'when' must be a mapping")
-        if any(key in raw_predicate for key in ("all", "any", "not", "unless")):
-            return _parse_nested_predicate(raw_predicate, context=f"{context} 'when'")
-        return _parse_condition(raw_predicate, context=f"{context} 'when'")
+        return _parse_inline_predicate(raw_predicate, context=context)
 
     if field == "all":
         return AllOf(items=_parse_predicate_list(raw_predicate, field="all", context=context))
     if field == "any":
         return AnyOf(items=_parse_predicate_list(raw_predicate, field="any", context=context))
     if field in {"not", "unless"}:
-        return Not(item=_parse_inline_predicate(raw_predicate, context=f"{context} '{field}'"))
+        return Not(item=_parse_inline_predicate(raw_predicate, context=context))
 
     raise InvalidPolicyError(f"{context}: unsupported predicate field {field!r}")
 
 
 def _parse_nested_predicate(raw_predicate: dict, *, context: str) -> Predicate:
-    predicate_fields = [field for field in ("all", "any", "not", "unless") if field in raw_predicate]
+    predicate_fields = [field for field in _LOGICAL_PREDICATE_FIELDS if field in raw_predicate]
     if len(predicate_fields) != 1:
         raise InvalidPolicyError(
             f"{context}: nested predicate must contain exactly one of ['all', 'any', 'not', 'unless']"
         )
 
+    if set(raw_predicate) != {predicate_fields[0]}:
+        raise InvalidPolicyError(
+            f"{context}: logical predicates cannot be combined with condition fields"
+        )
+
     field = predicate_fields[0]
-    return _parse_predicate(raw_predicate[field], field=field, context=context)
+    return _parse_predicate(raw_predicate[field], field=field, context=f"{context}.{field}")
 
 
 def _parse_predicate_list(raw_items, *, field: str, context: str) -> tuple[Predicate, ...]:
@@ -156,7 +158,7 @@ def _parse_predicate_list(raw_items, *, field: str, context: str) -> tuple[Predi
         raise InvalidPolicyError(f"{context}: '{field}' must be a non-empty list")
 
     return tuple(
-        _parse_inline_predicate(item, context=f"{context} '{field}'[{index}]")
+        _parse_inline_predicate(item, context=f"{context}[{index}]")
         for index, item in enumerate(raw_items)
     )
 
@@ -165,7 +167,7 @@ def _parse_inline_predicate(raw_predicate, *, context: str) -> Predicate:
     if not isinstance(raw_predicate, dict):
         raise InvalidPolicyError(f"{context}: predicate must be a mapping")
 
-    if any(field in raw_predicate for field in ("all", "any", "not", "unless")):
+    if any(field in raw_predicate for field in _LOGICAL_PREDICATE_FIELDS):
         return _parse_nested_predicate(raw_predicate, context=context)
 
     return _parse_condition(raw_predicate, context=context)
@@ -187,16 +189,36 @@ def _parse_condition(raw_condition: dict, *, context: str) -> Condition:
             f"{context}: condition is missing required field(s) {missing_fields!r}"
         )
 
+    key = raw_condition["key"]
+    if not isinstance(key, str) or not key.strip():
+        raise InvalidPolicyError(f"{context}: 'key' must be a non-empty string")
+
+    op = raw_condition["op"]
+    if op not in ALLOWED_OPERATORS:
+        raise InvalidPolicyError(
+            f"{context}: unsupported operator {op!r}; expected one of {list(ALLOWED_OPERATORS)!r}"
+        )
+
     has_value = "value" in raw_condition
     has_value_from = "value_from" in raw_condition
-    if has_value == has_value_from:
+
+    if op in {"exists", "not_exists"}:
+        if has_value or has_value_from:
+            raise InvalidPolicyError(
+                f"{context}: operator {op!r} does not accept 'value' or 'value_from'"
+            )
+    elif has_value == has_value_from:
         raise InvalidPolicyError(
             f"{context}: condition must specify exactly one of 'value' or 'value_from'"
         )
 
+    value_from = raw_condition.get("value_from")
+    if value_from is not None and (not isinstance(value_from, str) or not value_from.strip()):
+        raise InvalidPolicyError(f"{context}: 'value_from' must be a non-empty string")
+
     return Condition(
-        key=raw_condition["key"],
-        op=raw_condition["op"],
+        key=key,
+        op=op,
         value=raw_condition.get("value"),
-        value_from=raw_condition.get("value_from"),
+        value_from=value_from,
     )

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from datetime import datetime, timezone
 
 import pytest
@@ -12,12 +13,13 @@ from guardian_angel import (
     ApprovalResponse,
     ApprovalStatus,
     AsyncApprovalHandler,
+    DecisionSource,
     DecisionStatus,
+    GuardConfig,
     GuardianAngel,
     PolicyDeniedError,
     Rule,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -62,6 +64,11 @@ class _SyncAutoApproveHandler:
             approved_by="sync-auto",
             responded_at=datetime.now(tz=timezone.utc),
         )
+
+
+class _BrokenAsyncHandler:
+    async def submit(self, request: ApprovalRequest) -> ApprovalResponse:
+        raise RuntimeError("approval api failed")
 
 
 # ---------------------------------------------------------------------------
@@ -120,6 +127,27 @@ class TestRequestApprovalAsync:
         assert response.approved_by == "sync-auto"
 
     @pytest.mark.asyncio
+    async def test_sync_handler_runs_in_worker_thread(self):
+        main_thread_id = threading.get_ident()
+        seen_thread_ids = []
+
+        class CapturingSyncHandler:
+            def submit(self, request: ApprovalRequest) -> ApprovalResponse:
+                seen_thread_ids.append(threading.get_ident())
+                return ApprovalResponse(
+                    approval_id=request.approval_id,
+                    status=ApprovalStatus.APPROVED,
+                )
+
+        guard = GuardianAngel(
+            rules=_require_approval_rules(),
+            approval_handler=CapturingSyncHandler(),
+        )
+        await guard.request_approval_async(ActionRequest(tool="deploy"))
+        assert seen_thread_ids
+        assert seen_thread_ids[0] != main_thread_id
+
+    @pytest.mark.asyncio
     async def test_no_handler_raises_approval_required_error(self):
         guard = GuardianAngel(rules=_require_approval_rules())
         with pytest.raises(ApprovalRequiredError):
@@ -160,6 +188,26 @@ class TestRequestApprovalAsync:
         )
         assert captured[0].approval_id
         assert captured[0].action_request.request_id == "req-async-1"
+
+    @pytest.mark.asyncio
+    async def test_approval_backend_failure_defaults_to_deny(self):
+        guard = GuardianAngel(
+            rules=_require_approval_rules(),
+            approval_handler=_BrokenAsyncHandler(),
+        )
+        with pytest.raises(PolicyDeniedError) as exc_info:
+            await guard.request_approval_async(ActionRequest(tool="deploy"))
+        assert exc_info.value.decision.source == DecisionSource.APPROVAL_ERROR
+
+    @pytest.mark.asyncio
+    async def test_approval_backend_failure_can_fallback_to_require_approval(self):
+        guard = GuardianAngel(
+            rules=_require_approval_rules(),
+            approval_handler=_BrokenAsyncHandler(),
+            config=GuardConfig(on_approval_error=DecisionStatus.REQUIRE_APPROVAL),
+        )
+        with pytest.raises(ApprovalRequiredError):
+            await guard.request_approval_async(ActionRequest(tool="deploy"))
 
 
 # ---------------------------------------------------------------------------
@@ -206,7 +254,7 @@ class TestAsyncToolDecorator:
 
         @guard.async_tool(name="deploy")
         async def deploy(target):
-            return "deployed"
+            return f"deployed {target}"
 
         with pytest.raises(PolicyDeniedError):
             await deploy("prod")
@@ -231,7 +279,7 @@ class TestAsyncToolDecorator:
 
         @guard.async_tool(name="deploy")
         async def deploy(target):
-            return "deployed"
+            return f"deployed {target}"
 
         with pytest.raises(ApprovalRequiredError):
             await deploy("prod")
@@ -244,7 +292,7 @@ class TestAsyncToolDecorator:
 
         @guard.async_tool(name="delete")
         async def delete_resource(resource_id):
-            return "deleted"
+            return f"deleted {resource_id}"
 
         with pytest.raises(PolicyDeniedError):
             await delete_resource("res-1")
@@ -279,7 +327,7 @@ class TestAsyncToolDecorator:
 
         @guard.async_tool(name="deploy")
         async def deploy(target, *, request_id=None):
-            return "deployed"
+            return f"deployed {target} {request_id}"
 
         await deploy("prod", request_id="async-tool-req-1")
         assert captured[0].approval_id

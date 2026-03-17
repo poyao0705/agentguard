@@ -1,9 +1,10 @@
 import pytest
 
 from guardian_angel import (
-    DecisionStatus,
-    GuardianAngel,
     ApprovalRequiredError,
+    DecisionStatus,
+    GuardConfig,
+    GuardianAngel,
     PolicyDeniedError,
     Rule,
 )
@@ -31,6 +32,7 @@ class TestToolDecorator:
 
         @guard.tool(name="delete_file")
         def delete_file(path):
+            _ = path
             return "deleted"
 
         with pytest.raises(PolicyDeniedError) as exc_info:
@@ -46,6 +48,7 @@ class TestToolDecorator:
 
         @guard.tool(name="deploy")
         def deploy(target):
+            _ = target
             return "deployed"
 
         with pytest.raises(ApprovalRequiredError) as exc_info:
@@ -66,6 +69,7 @@ class TestToolDecorator:
 
         @guard.tool(name="deploy")
         def deploy(target, *, attributes=None):
+            _ = (target, attributes)
             return "deployed"
 
         # Should be blocked when resource.environment=prod
@@ -88,9 +92,10 @@ class TestToolDecorator:
 
         @guard.tool(name="github.pr")
         def merge_pr(pr_id, *, attributes=None, request_id=None):
+            _ = (pr_id, attributes, request_id)
             return "merged"
 
-        with pytest.raises(PolicyDeniedError) as exc_info:
+        with pytest.raises(PolicyDeniedError):
             merge_pr(
                 "42",
                 request_id="req-42",
@@ -107,3 +112,37 @@ class TestToolDecorator:
 
         assert my_special_function.__name__ == "my_special_function"
         assert my_special_function.__doc__ == "My docstring."
+
+    def test_protected_tool_no_match_can_require_approval(self):
+        guard = GuardianAngel(
+            rules=[],
+            config=GuardConfig(
+                protected_tools=frozenset({"delete_file"}),
+                protected_no_match_decision=DecisionStatus.REQUIRE_APPROVAL,
+            ),
+        )
+
+        @guard.tool(name="delete_file")
+        def delete_file(path):
+            _ = path
+            return "deleted"
+
+        with pytest.raises(ApprovalRequiredError):
+            delete_file("/tmp/x")
+
+    def test_approval_backend_failure_can_allow_execution(self):
+        class BrokenHandler:
+            def submit(self, request):
+                raise RuntimeError("approval backend down")
+
+        guard = GuardianAngel(
+            rules=[Rule(name="approve_deploy", tool="deploy", decision=DecisionStatus.REQUIRE_APPROVAL)],
+            approval_handler=BrokenHandler(),
+            config=GuardConfig(on_approval_error=DecisionStatus.ALLOW),
+        )
+
+        @guard.tool(name="deploy")
+        def deploy(target):
+            return f"deployed {target}"
+
+        assert deploy("prod") == "deployed prod"

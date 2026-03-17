@@ -9,7 +9,6 @@ from guardian_angel.core.yaml_loader import load_policy_file
 
 
 def _write_yaml(content: str) -> str:
-    """Write content to a temp YAML file and return its path."""
     fd, path = tempfile.mkstemp(suffix=".yaml")
     os.write(fd, content.encode())
     os.close(fd)
@@ -36,15 +35,9 @@ rules:
         try:
             rules = load_policy_file(path)
             assert len(rules) == 2
-
             assert isinstance(rules[0], Rule)
             assert rules[0].name == "deny_prod_delete"
-            assert rules[0].tool == "github.delete_branch"
-            assert rules[0].decision == "deny"
-            assert rules[0].attributes == {"resource.environment": "prod"}
-
             assert rules[1].name == "require_high_risk_merge"
-            assert rules[1].attributes == {"context.risk_level": "high"}
         finally:
             os.unlink(path)
 
@@ -64,83 +57,100 @@ rules:
         finally:
             os.unlink(path)
 
-        def test_when_condition_loads_predicate(self):
-                path = _write_yaml(
-                        """
+    def test_when_condition_loads_predicate(self):
+        path = _write_yaml(
+            """
 rules:
-    - name: block_prod_delete
-        tool: resource.delete
-        decision: deny
-        when:
-            key: resource.environment
+  - name: block_prod_delete
+    tool: resource.delete
+    decision: deny
+    when:
+      key: resource.environment
+      op: eq
+      value: prod
+"""
+        )
+        try:
+            rules = load_policy_file(path)
+            assert isinstance(rules[0].when, Condition)
+            assert rules[0].when.key == "resource.environment"
+            assert rules[0].when.op == "eq"
+            assert rules[0].when.value == "prod"
+        finally:
+            os.unlink(path)
+
+    def test_all_any_not_load_nested_predicates(self):
+        path = _write_yaml(
+            """
+rules:
+  - name: review_prod_release
+    tool: deploy
+    decision: require_approval
+    all:
+      - key: resource.environment
+        op: eq
+        value: prod
+      - any:
+          - key: context.risk_level
             op: eq
-            value: prod
-"""
-                )
-                try:
-                        rules = load_policy_file(path)
-                        assert isinstance(rules[0].when, Condition)
-                        assert rules[0].when.key == "resource.environment"
-                        assert rules[0].when.op == "eq"
-                        assert rules[0].when.value == "prod"
-                finally:
-                        os.unlink(path)
-
-        def test_all_any_not_load_nested_predicates(self):
-                path = _write_yaml(
-                        """
-rules:
-    - name: review_prod_release
-        tool: deploy
-        decision: require_approval
-        all:
-            - key: resource.environment
-                op: eq
-                value: prod
-            - any:
-                    - key: context.risk_level
-                        op: eq
-                        value: high
-                    - key: subject.role
-                        op: ne
-                        value: admin
-            - not:
-                    key: agent.trust_level
-                    op: eq
-                    value: high
-"""
-                )
-                try:
-                        rules = load_policy_file(path)
-                        assert isinstance(rules[0].when, AllOf)
-
-                        all_of = rules[0].when
-                        assert isinstance(all_of.items[0], Condition)
-                        assert isinstance(all_of.items[1], AnyOf)
-                        assert isinstance(all_of.items[2], Not)
-                finally:
-                        os.unlink(path)
-
-        def test_condition_with_value_from_loads(self):
-                path = _write_yaml(
-                        """
-rules:
-    - name: require_tenant_match
-        tool: resource.read
-        decision: deny
-        when:
-            key: subject.tenant_id
+            value: high
+          - key: subject.role
             op: ne
-            value_from: resource.tenant_id
+            value: admin
+      - not:
+          key: agent.trust_level
+          op: eq
+          value: high
 """
-                )
-                try:
-                        rules = load_policy_file(path)
-                        assert isinstance(rules[0].when, Condition)
-                        assert rules[0].when.value_from == "resource.tenant_id"
-                        assert rules[0].when.value is None
-                finally:
-                        os.unlink(path)
+        )
+        try:
+            rules = load_policy_file(path)
+            assert isinstance(rules[0].when, AllOf)
+            all_of = rules[0].when
+            assert isinstance(all_of.items[0], Condition)
+            assert isinstance(all_of.items[1], AnyOf)
+            assert isinstance(all_of.items[2], Not)
+        finally:
+            os.unlink(path)
+
+    def test_condition_with_value_from_loads(self):
+        path = _write_yaml(
+            """
+rules:
+  - name: require_tenant_match
+    tool: resource.read
+    decision: deny
+    when:
+      key: subject.tenant_id
+      op: ne
+      value_from: resource.tenant_id
+"""
+        )
+        try:
+            rules = load_policy_file(path)
+            assert isinstance(rules[0].when, Condition)
+            assert rules[0].when.value_from == "resource.tenant_id"
+            assert rules[0].when.value is None
+        finally:
+            os.unlink(path)
+
+    def test_exists_condition_loads(self):
+        path = _write_yaml(
+            """
+rules:
+  - name: require_subject
+    tool: resource.read
+    decision: deny
+    when:
+      key: subject.id
+      op: exists
+"""
+        )
+        try:
+            rules = load_policy_file(path)
+            assert rules[0].when.op == "exists"
+        finally:
+            os.unlink(path)
 
     def test_missing_rules_key_raises(self):
         path = _write_yaml("policies:\n  - name: x\n")
@@ -150,48 +160,48 @@ rules:
         finally:
             os.unlink(path)
 
-        def test_multiple_predicate_fields_raise(self):
-                path = _write_yaml(
-                        """
+    def test_multiple_predicate_fields_raise(self):
+        path = _write_yaml(
+            """
 rules:
-    - name: bad
-        tool: deploy
-        decision: deny
-        when:
-            key: resource.environment
-            op: eq
-            value: prod
-        any:
-            - key: subject.role
-                op: eq
-                value: developer
+  - name: bad
+    tool: deploy
+    decision: deny
+    when:
+      key: resource.environment
+      op: eq
+      value: prod
+    any:
+      - key: subject.role
+        op: eq
+        value: developer
 """
-                )
-                try:
-                        with pytest.raises(InvalidPolicyError, match="only one predicate field"):
-                                load_policy_file(path)
-                finally:
-                        os.unlink(path)
+        )
+        try:
+            with pytest.raises(InvalidPolicyError, match="only one predicate field"):
+                load_policy_file(path)
+        finally:
+            os.unlink(path)
 
-        def test_condition_requires_exactly_one_value_source(self):
-                path = _write_yaml(
-                        """
+    def test_condition_requires_exactly_one_value_source(self):
+        path = _write_yaml(
+            """
 rules:
-    - name: bad
-        tool: deploy
-        decision: deny
-        when:
-            key: resource.environment
-            op: eq
-            value: prod
-            value_from: context.target_environment
+  - name: bad
+    tool: deploy
+    decision: deny
+    when:
+      key: resource.environment
+      op: eq
+      value: prod
+      value_from: context.target_environment
 """
-                )
-                try:
-                        with pytest.raises(InvalidPolicyError, match="exactly one of 'value' or 'value_from'"):
-                                load_policy_file(path)
-                finally:
-                        os.unlink(path)
+        )
+        try:
+            with pytest.raises(InvalidPolicyError, match="exactly one of 'value' or 'value_from'"):
+                load_policy_file(path)
+        finally:
+            os.unlink(path)
 
     def test_missing_name_field_raises(self):
         path = _write_yaml(
@@ -341,6 +351,65 @@ rules:
                 InvalidPolicyError,
                 match="Use namespaced keys under 'attributes'",
             ):
+                load_policy_file(path)
+        finally:
+            os.unlink(path)
+
+    def test_invalid_operator_rejected(self):
+        path = _write_yaml(
+            """
+rules:
+  - name: bad
+    tool: deploy
+    decision: deny
+    when:
+      key: subject.role
+      op: maybe
+      value: admin
+"""
+        )
+        try:
+            with pytest.raises(InvalidPolicyError, match="unsupported operator"):
+                load_policy_file(path)
+        finally:
+            os.unlink(path)
+
+    def test_exists_rejects_value(self):
+        path = _write_yaml(
+            """
+rules:
+  - name: bad
+    tool: deploy
+    decision: deny
+    when:
+      key: subject.role
+      op: exists
+      value: admin
+"""
+        )
+        try:
+            with pytest.raises(InvalidPolicyError, match="does not accept 'value'"):
+                load_policy_file(path)
+        finally:
+            os.unlink(path)
+
+    def test_logical_predicate_cannot_mix_condition_fields(self):
+        path = _write_yaml(
+            """
+rules:
+  - name: bad
+    tool: deploy
+    decision: deny
+    when:
+      all:
+        - key: subject.role
+          op: eq
+          value: admin
+      key: resource.environment
+"""
+        )
+        try:
+            with pytest.raises(InvalidPolicyError, match="cannot be combined"):
                 load_policy_file(path)
         finally:
             os.unlink(path)

@@ -1,6 +1,6 @@
 [project]
 name = "guardian-angel"
-version = "0.4.0"
+version = "0.4.1"
 description = "Policy engine for governing AI agent tool execution."
 readme = "README.md"
 license = { text = "MIT" }
@@ -30,6 +30,14 @@ cli = [
     "typer>=0.24.1",
 ]
 test = ["pytest>=7.0", "pytest-asyncio>=0.21"]
+dev = [
+    "build>=1.2.2",
+    "mypy>=1.15.0",
+    "pip-audit>=2.8.0",
+    "ruff>=0.11.0",
+    "types-PyYAML>=6.0.12.20250516",
+    "twine>=6.1.0",
+]
 
 [project.scripts]
 guardian-angel = "guardian_angel.cli:main"
@@ -42,6 +50,21 @@ Issues = "https://github.com/poyao0705/guardian-angel/issues"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+extend-exclude = ["examples"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B"]
+ignore = ["E402", "E501"]
+
+[tool.mypy]
+python_version = "3.11"
+mypy_path = ["src"]
+warn_unused_configs = true
+check_untyped_defs = true
 
 [build-system]
 requires = ["hatchling"]

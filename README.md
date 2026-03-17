@@ -31,9 +31,16 @@ rules:
 ```
 
 ```python
-from guardian_angel import GuardianAngel, ActionRequest
+from guardian_angel import ActionRequest, DecisionStatus, GuardConfig, GuardianAngel
 
-guard = GuardianAngel.from_yaml("policy.yaml")
+guard = GuardianAngel.from_yaml(
+    "policy.yaml",
+    config=GuardConfig(
+        default_decision=DecisionStatus.ALLOW,
+        on_evaluation_error=DecisionStatus.DENY,
+        on_approval_error=DecisionStatus.DENY,
+    ),
+)
 
 decision = guard.authorize(
     ActionRequest(
@@ -47,7 +54,7 @@ decision = guard.authorize(
 print(decision.status)  # "deny"
 ```
 
-First matching rule wins. No match → **allow**.
+First matching rule wins. No match uses `default_decision`, which defaults to **allow**.
 
 ## CLI
 
@@ -63,6 +70,7 @@ guardian-angel --version
 ## Features
 
 - **Predicate rules** — `when`, `all`, `any`, `not` with operators (`eq`, `ne`, `in`, `not_in`, `contains`, `gt`, `gte`, `lt`, `lte`, …)
+- **Explicit failure semantics** — configurable default/no-match behavior, evaluation-error behavior, approval-error behavior, protected tools, and required request fields
 - **Cross-field comparison** — `value_from` to compare one attribute against another
 - **Approval workflow** — pluggable `ApprovalHandler` and `AsyncApprovalHandler` protocols for human-in-the-loop approval (Slack, email, GitHub issues, etc.)
 - **Tool decorator** — `@guard.tool()` (sync) and `@guard.async_tool()` (async) for automatic policy enforcement, including approval
@@ -70,6 +78,7 @@ guardian-angel --version
 - **CLI** — evaluate policies from the command line with colored output
 
 See [`examples/`](examples/) for more.
+If you want one end-to-end reference that wires everything together, start with [`examples/complete_pipeline_example.py`](examples/complete_pipeline_example.py).
 
 ## How It Works
 
@@ -79,6 +88,49 @@ Agent tool call → ActionRequest → GuardianAngel.authorize() → Decision
                                                                  ├─ deny  → block
                                                                  └─ require_approval → ApprovalHandler
 ```
+
+## Safety Modes
+
+Guardian Angel now separates:
+
+- no rule matched
+- policy evaluation failed
+- approval backend failed
+
+```python
+from guardian_angel import DecisionStatus, GuardConfig, GuardianAngel
+
+# Global allow, but protected tools require approval when no rule matches.
+guard = GuardianAngel(
+    rules=rules,
+    config=GuardConfig(
+        default_decision=DecisionStatus.ALLOW,
+        on_evaluation_error=DecisionStatus.DENY,
+        on_approval_error=DecisionStatus.DENY,
+        protected_tool_prefixes=("github.", "filesystem."),
+        protected_no_match_decision=DecisionStatus.REQUIRE_APPROVAL,
+    ),
+)
+
+# Full fail-closed mode.
+fail_closed_guard = GuardianAngel(
+    rules=rules,
+    config=GuardConfig(default_decision=DecisionStatus.DENY),
+)
+
+# Approval-fallback mode.
+approval_fallback_guard = GuardianAngel(
+    rules=rules,
+    config=GuardConfig(on_approval_error=DecisionStatus.REQUIRE_APPROVAL),
+)
+```
+
+## Operator Semantics
+
+- Missing keys do not match ordinary comparisons such as `eq`, `gt`, `in`, or `contains`.
+- Use `exists` and `not_exists` when presence itself matters.
+- Type mismatches are converted into deterministic evaluation errors.
+- Critical request fields can be required globally with `GuardConfig(required_fields=(...))`.
 
 ## Approval Workflow
 
@@ -167,6 +219,7 @@ Behavior:
 - **require_approval + no handler** → raises `ApprovalRequiredError`
 - **allow** → raises `ValueError` (no approval needed)
 - **deny** → raises `PolicyDeniedError`
+- **approval backend failure** → maps through `on_approval_error`; async code runs sync handlers in `asyncio.to_thread(...)`
 
 ### With the `@guard.tool()` / `@guard.async_tool()` decorator
 
@@ -187,6 +240,13 @@ async def update_resource(resource_id, *, attributes=None, request_id=None):
 Without a handler, `ApprovalRequiredError` is raised as before.
 
 See [`examples/approval_example.py`](examples/approval_example.py) (sync) and [`examples/async_approval_example.py`](examples/async_approval_example.py) (async) for full working examples.
+
+## CLI Validation
+
+The CLI now validates request payloads before evaluation.
+
+- Exit code `2`: invalid request input
+- Exit code `3`: invalid policy input
 
 ## Roadmap
 

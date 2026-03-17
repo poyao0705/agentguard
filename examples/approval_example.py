@@ -9,6 +9,8 @@ from guardian_angel import (
     ApprovalRequiredError,
     ApprovalResponse,
     ApprovalStatus,
+    DecisionStatus,
+    GuardConfig,
     GuardianAngel,
     PolicyDeniedError,
 )
@@ -77,7 +79,15 @@ class AutoRejectHandler:
 # ---------------------------------------------------------------------------
 
 policy_path = os.path.join(os.path.dirname(__file__), "policy.yaml")
-guard = GuardianAngel.from_yaml(policy_path, approval_handler=AutoApproveHandler())
+guard = GuardianAngel.from_yaml(
+    policy_path,
+    approval_handler=AutoApproveHandler(),
+    config=GuardConfig(
+        default_decision=DecisionStatus.ALLOW,
+        on_evaluation_error=DecisionStatus.DENY,
+        on_approval_error=DecisionStatus.DENY,
+    ),
+)
 
 
 # ---------------------------------------------------------------------------
@@ -138,7 +148,9 @@ print("=== @guard.tool() with approval ===\n")
 
 # Switch to a reject handler to show the denied path.
 guard_reject = GuardianAngel.from_yaml(
-    policy_path, approval_handler=AutoRejectHandler()
+    policy_path,
+    approval_handler=AutoRejectHandler(),
+    config=GuardConfig(on_approval_error=DecisionStatus.DENY),
 )
 
 
@@ -185,7 +197,10 @@ except PolicyDeniedError as e:
 
 print("=== No handler (raises ApprovalRequiredError) ===\n")
 
-guard_no_handler = GuardianAngel.from_yaml(policy_path)
+guard_no_handler = GuardianAngel.from_yaml(
+    policy_path,
+    config=GuardConfig(on_evaluation_error=DecisionStatus.DENY),
+)
 
 
 @guard_no_handler.tool(name="resource.update")

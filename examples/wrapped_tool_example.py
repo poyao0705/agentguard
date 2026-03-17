@@ -7,6 +7,8 @@ from guardian_angel import (
     ApprovalRequest,
     ApprovalResponse,
     ApprovalStatus,
+    DecisionStatus,
+    GuardConfig,
     GuardianAngel,
     PolicyDeniedError,
 )
@@ -30,7 +32,15 @@ class AutoApproveHandler:
 # Load policy from YAML — with an approval handler so require_approval
 # decisions are routed through it instead of raising ApprovalRequiredError.
 policy_path = os.path.join(os.path.dirname(__file__), "policy.yaml")
-guard = GuardianAngel.from_yaml(policy_path, approval_handler=AutoApproveHandler())
+guard = GuardianAngel.from_yaml(
+    policy_path,
+    approval_handler=AutoApproveHandler(),
+    config=GuardConfig(
+        default_decision=DecisionStatus.ALLOW,
+        on_evaluation_error=DecisionStatus.DENY,
+        on_approval_error=DecisionStatus.DENY,
+    ),
+)
 
 
 @guard.tool(name="resource.delete")

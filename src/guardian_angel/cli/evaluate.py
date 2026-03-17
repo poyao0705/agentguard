@@ -3,15 +3,21 @@ from __future__ import annotations
 import json
 
 from guardian_angel import ActionRequest, GuardianAngel
+from guardian_angel.core.exceptions import RequestValidationError
 
 
 def load_request(path: str) -> ActionRequest:
     """Load an action request from a JSON file."""
 
-    with open(path, encoding="utf-8") as file:
-        data = json.load(file)
+    try:
+        with open(path, encoding="utf-8") as file:
+            data = json.load(file)
+    except FileNotFoundError as exc:
+        raise RequestValidationError(f"Request file not found: {path}") from exc
+    except json.JSONDecodeError as exc:
+        raise RequestValidationError(f"Malformed JSON in {path}: {exc.msg}") from exc
 
-    return ActionRequest(**data)
+    return ActionRequest.from_mapping(data)
 
 
 def evaluate_request(policy_path: str, request: ActionRequest):

@@ -5,7 +5,7 @@ import inspect
 from datetime import datetime, timezone
 
 from .approval import ApprovalRequest, ApprovalStatus
-from .decision import DecisionStatus
+from .decision import Decision, DecisionStatus
 from .exceptions import ApprovalRequiredError, PolicyDeniedError
 from .request import ActionRequest
 
@@ -40,7 +40,7 @@ def _handle_approval_sync(guard, decision, request):
         decision=decision,
         requested_at=datetime.now(tz=timezone.utc),
     )
-    return guard.approval_handler.submit(approval_request)
+    return guard.submit_approval_sync(approval_request)
 
 
 async def _handle_approval_async(guard, decision, request):
@@ -54,10 +54,7 @@ async def _handle_approval_async(guard, decision, request):
         requested_at=datetime.now(tz=timezone.utc),
     )
 
-    if inspect.iscoroutinefunction(guard.approval_handler.submit):
-        return await guard.approval_handler.submit(approval_request)
-
-    return guard.approval_handler.submit(approval_request)
+    return await guard.submit_approval_async(approval_request)
 
 
 def make_tool_decorator(guard, name: str):
@@ -72,9 +69,15 @@ def make_tool_decorator(guard, name: str):
                 raise PolicyDeniedError(decision)
             if decision.status == DecisionStatus.REQUIRE_APPROVAL:
                 response = _handle_approval_sync(guard, decision, request)
+                if isinstance(response, Decision):
+                    if response.status == DecisionStatus.ALLOW:
+                        return func(*args, **kwargs)
+                    if response.status == DecisionStatus.REQUIRE_APPROVAL:
+                        raise ApprovalRequiredError(response)
+                    raise PolicyDeniedError(response)
                 if response.status == ApprovalStatus.APPROVED:
                     return func(*args, **kwargs)
-                raise PolicyDeniedError(decision)
+                raise PolicyDeniedError(guard.decision_for_approval_response(decision, response))
 
             return func(*args, **kwargs)
 
@@ -95,9 +98,15 @@ def make_async_tool_decorator(guard, name: str):
                 raise PolicyDeniedError(decision)
             if decision.status == DecisionStatus.REQUIRE_APPROVAL:
                 response = await _handle_approval_async(guard, decision, request)
+                if isinstance(response, Decision):
+                    if response.status == DecisionStatus.ALLOW:
+                        return await func(*args, **kwargs)
+                    if response.status == DecisionStatus.REQUIRE_APPROVAL:
+                        raise ApprovalRequiredError(response)
+                    raise PolicyDeniedError(response)
                 if response.status == ApprovalStatus.APPROVED:
                     return await func(*args, **kwargs)
-                raise PolicyDeniedError(decision)
+                raise PolicyDeniedError(guard.decision_for_approval_response(decision, response))
 
             return await func(*args, **kwargs)
 

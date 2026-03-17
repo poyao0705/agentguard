@@ -10,6 +10,8 @@ from guardian_angel import (
     ApprovalRequiredError,
     ApprovalResponse,
     ApprovalStatus,
+    DecisionStatus,
+    GuardConfig,
     GuardianAngel,
     PolicyDeniedError,
 )
@@ -61,8 +63,20 @@ class AsyncRejectHandler:
 # ---------------------------------------------------------------------------
 
 policy_path = os.path.join(os.path.dirname(__file__), "policy.yaml")
-guard = GuardianAngel.from_yaml(policy_path, approval_handler=AsyncAutoApproveHandler())
-guard_reject = GuardianAngel.from_yaml(policy_path, approval_handler=AsyncRejectHandler())
+guard = GuardianAngel.from_yaml(
+    policy_path,
+    approval_handler=AsyncAutoApproveHandler(),
+    config=GuardConfig(
+        default_decision=DecisionStatus.ALLOW,
+        on_evaluation_error=DecisionStatus.DENY,
+        on_approval_error=DecisionStatus.DENY,
+    ),
+)
+guard_reject = GuardianAngel.from_yaml(
+    policy_path,
+    approval_handler=AsyncRejectHandler(),
+    config=GuardConfig(on_approval_error=DecisionStatus.DENY),
+)
 
 
 # ---------------------------------------------------------------------------
@@ -132,12 +146,14 @@ async def main():
 
     @guard.async_tool(name="resource.update")
     async def update_resource(resource_id, *, attributes=None, request_id=None):
+        _ = (attributes, request_id)
         # Simulate async work
         await asyncio.sleep(0.01)
         return {"updated": True, "resource_id": resource_id}
 
     @guard_reject.async_tool(name="resource.update")
     async def update_resource_strict(resource_id, *, attributes=None, request_id=None):
+        _ = (attributes, request_id)
         await asyncio.sleep(0.01)
         return {"updated": True, "resource_id": resource_id}
 
@@ -164,10 +180,14 @@ async def main():
 
     print("=== No handler (raises ApprovalRequiredError) ===\n")
 
-    guard_no_handler = GuardianAngel.from_yaml(policy_path)
+    guard_no_handler = GuardianAngel.from_yaml(
+        policy_path,
+        config=GuardConfig(on_evaluation_error=DecisionStatus.DENY),
+    )
 
     @guard_no_handler.async_tool(name="resource.update")
     async def update_no_handler(resource_id, *, attributes=None, request_id=None):
+        _ = (attributes, request_id)
         await asyncio.sleep(0.01)
         return {"updated": True, "resource_id": resource_id}
 

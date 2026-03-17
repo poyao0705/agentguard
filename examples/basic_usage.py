@@ -1,6 +1,12 @@
-"""Basic usage: build rules in code with condition, all, any, not, and value_from."""
+"""Basic usage: build rules in code with predicates and explicit safety posture."""
 
-from guardian_angel import ActionRequest, DecisionStatus, GuardianAngel, Rule
+from guardian_angel import (
+    ActionRequest,
+    DecisionStatus,
+    GuardConfig,
+    GuardianAngel,
+    Rule,
+)
 from guardian_angel.core.rule import AllOf, AnyOf, Condition, Not
 
 rules = [
@@ -56,7 +62,15 @@ rules = [
     ),
 ]
 
-guard = GuardianAngel(rules=rules)
+guard = GuardianAngel(
+    rules=rules,
+    config=GuardConfig(
+        default_decision=DecisionStatus.ALLOW,
+        on_evaluation_error=DecisionStatus.DENY,
+        protected_tools=frozenset({"resource.archive"}),
+        protected_no_match_decision=DecisionStatus.REQUIRE_APPROVAL,
+    ),
+)
 
 requests = [
     ActionRequest(
@@ -115,11 +129,18 @@ requests = [
             "subject.role": "sre",
         },
     ),
+    ActionRequest(
+        tool="resource.archive",
+        request_id="req-006",
+        attributes={
+            "resource.environment": "prod",
+        },
+    ),
 ]
 
 for req in requests:
     decision = guard.authorize(req)
     print(
-        f"{req.request_id}: tool={req.tool:<15} status={decision.status:<17} "
-        f"rule={decision.rule_name}"
+        f"{req.request_id}: tool={req.tool:<18} status={decision.status:<17} "
+        f"source={decision.source:<18} rule={decision.rule_name}"
     )

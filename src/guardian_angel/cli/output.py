@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from guardian_angel.core.request import ActionRequest
 from guardian_angel.core.decision import Decision, DecisionStatus
+from guardian_angel.core.request import ActionRequest
 
 
 def _status_style(status: DecisionStatus) -> str:

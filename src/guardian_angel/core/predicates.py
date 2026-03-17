@@ -14,7 +14,24 @@ Operator = Literal[
     "gte",
     "lt",
     "lte",
+    "exists",
+    "not_exists",
 ]
+
+ALLOWED_OPERATORS: tuple[Operator, ...] = (
+    "eq",
+    "ne",
+    "in",
+    "not_in",
+    "contains",
+    "not_contains",
+    "gt",
+    "gte",
+    "lt",
+    "lte",
+    "exists",
+    "not_exists",
+)
 
 
 @dataclass(frozen=True, slots=True)
