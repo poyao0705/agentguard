@@ -248,18 +248,17 @@ class TestCustomEvaluator:
                 engine=Dummy(),
             )
 
-    def test_decorator_works_with_custom_engine(self):
+    def test_invoke_works_with_custom_engine(self):
         class DenyAll:
             def evaluate(self, _request: ActionRequest) -> Decision:
                 return Decision(status=DecisionStatus.DENY, reason="nope")
 
         guard = GuardianAngel(engine=DenyAll())
 
-        @guard.tool(name="my_tool")
         def my_func():
             return "ok"
 
         from guardian_angel import PolicyDeniedError
 
         with pytest.raises(PolicyDeniedError):
-            my_func()
+            guard.invoke(my_func)

@@ -73,7 +73,7 @@ guardian-angel --version
 - **Explicit failure semantics** — configurable default/no-match behavior, evaluation-error behavior, approval-error behavior, protected tools, and required request fields
 - **Cross-field comparison** — `value_from` to compare one attribute against another
 - **Approval workflow** — pluggable `ApprovalHandler` and `AsyncApprovalHandler` protocols for human-in-the-loop approval (Slack, email, GitHub issues, etc.)
-- **Tool decorator** — `@guard.tool()` (sync) and `@guard.async_tool()` (async) for automatic policy enforcement, including approval
+- **Tool invocation** — `guard.invoke()` (sync) and `guard.ainvoke()` (async) for policy enforcement on any function without decorators
 - **YAML or Python** — define rules in files or construct `Rule` objects in code
 - **CLI** — evaluate policies from the command line with colored output
 
@@ -221,42 +221,43 @@ Behavior:
 - **deny** → raises `PolicyDeniedError`
 - **approval backend failure** → maps through `on_approval_error`; async code runs sync handlers in `asyncio.to_thread(...)`
 
-### With the `@guard.tool()` / `@guard.async_tool()` decorator
+### With `guard.invoke()` / `guard.ainvoke()`
 
-The decorator routes `require_approval` decisions through the handler automatically.
-
-Policy context is passed via a single `guard_ctx` keyword argument using the `GuardContext` object. This avoids collisions with your tool's own arguments:
+`invoke` and `ainvoke` call any function under policy enforcement without decorating it.
+Policy context is passed via `guard_ctx`; the function itself stays completely clean:
 
 ```python
 from guardian_angel import GuardContext
 
-# Sync decorator — for sync functions + sync handler
-@guard.tool(name="resource.update")
-def update_resource(resource_id, *, guard_ctx: GuardContext | None = None):
+def update_resource(resource_id):
     return {"updated": True, "resource_id": resource_id}
 
-update_resource(
+# Sync
+result = guard.invoke(
+    update_resource,
     "doc-1",
     guard_ctx=GuardContext(
+        tool="resource.update",
         attributes={"resource.environment": "prod", "subject.role": "developer"},
         request_id="req-1",
     ),
 )
 
-# Async decorator — for async functions, works with sync or async handler
-@guard.async_tool(name="resource.update")
-async def update_resource(resource_id, *, guard_ctx: GuardContext | None = None):
+# Async — works with both sync and async functions
+async def update_resource_async(resource_id):
     return {"updated": True, "resource_id": resource_id}
+
+result = await guard.ainvoke(
+    update_resource_async,
+    "doc-1",
+    guard_ctx=GuardContext(
+        tool="resource.update",
+        attributes={"resource.environment": "prod"},
+    ),
+)
 ```
 
-Because all policy context lives in a dedicated object, your tool can freely use any argument names without collision:
-
-```python
-@guard.tool(name="html.render")
-def render(tag: str, attributes: dict, *, guard_ctx: GuardContext | None = None):
-    # `attributes` here is HTML attributes — no clash with policy context
-    ...
-```
+If `guard_ctx.tool` is not set, the function's `__name__` is used as the policy tool name.
 
 Without a handler, `ApprovalRequiredError` is raised as before.
 

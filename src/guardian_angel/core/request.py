@@ -7,14 +7,16 @@ from .exceptions import RequestValidationError
 
 @dataclass(frozen=True, slots=True)
 class GuardContext:
-    """Policy context passed to ``@guard.tool()`` decorated functions.
+    """Policy context for :meth:`~guardian_angel.GuardianAngel.invoke` /
+    :meth:`~guardian_angel.GuardianAngel.ainvoke`.
 
-    Use ``guard_ctx=GuardContext(...)`` to supply policy attributes and a
-    request ID without colliding with your tool's own arguments.
+    Use ``guard_ctx=GuardContext(...)`` to supply policy attributes, a
+    request ID, and an optional tool name.
     """
 
     attributes: dict[str, Any] = field(default_factory=dict)
     request_id: str | None = None
+    tool: str | None = None
 
 
 @dataclass(slots=True)

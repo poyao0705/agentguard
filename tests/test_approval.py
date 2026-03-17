@@ -348,23 +348,22 @@ class TestFromYaml:
 
 
 # ---------------------------------------------------------------------------
-# Tool decorator integration
+# guard.invoke() integration
 # ---------------------------------------------------------------------------
 
 
-class TestToolDecoratorWithApproval:
+class TestInvokeWithApproval:
     def test_auto_approve_executes_function(self):
         guard = GuardianAngel(
             rules=[Rule(name="r", tool="deploy", decision=DecisionStatus.REQUIRE_APPROVAL)],
             approval_handler=_AutoApproveHandler(),
         )
 
-        @guard.tool(name="deploy")
         def deploy(target):
             assert target == "prod"
             return f"deployed {target}"
 
-        result = deploy("prod")
+        result = guard.invoke(deploy, "prod", guard_ctx=GuardContext(tool="deploy"))
         assert result == "deployed prod"
 
     def test_reject_raises_policy_denied_error(self):
@@ -373,13 +372,12 @@ class TestToolDecoratorWithApproval:
             approval_handler=_RejectHandler(),
         )
 
-        @guard.tool(name="deploy")
         def deploy(target):
             assert target == "prod"
             return "deployed"
 
         with pytest.raises(PolicyDeniedError):
-            deploy("prod")
+            guard.invoke(deploy, "prod", guard_ctx=GuardContext(tool="deploy"))
 
     def test_expired_raises_policy_denied_error(self):
         guard = GuardianAngel(
@@ -387,23 +385,21 @@ class TestToolDecoratorWithApproval:
             approval_handler=_ExpireHandler(),
         )
 
-        @guard.tool(name="deploy")
         def deploy(target):
             assert target == "prod"
             return "deployed"
 
         with pytest.raises(PolicyDeniedError):
-            deploy("prod")
+            guard.invoke(deploy, "prod", guard_ctx=GuardContext(tool="deploy"))
 
     def test_no_handler_raises_approval_required_error(self):
         guard = _require_approval_guard()
 
-        @guard.tool(name="deploy")
         def deploy(target):
             return f"deployed {target}"
 
         with pytest.raises(ApprovalRequiredError):
-            deploy("prod")
+            guard.invoke(deploy, "prod", guard_ctx=GuardContext(tool="deploy"))
 
     def test_handler_receives_correct_request_id(self):
         captured = []
@@ -421,13 +417,14 @@ class TestToolDecoratorWithApproval:
             approval_handler=CapturingHandler(),
         )
 
-        @guard.tool(name="deploy")
-        def deploy(target, *, guard_ctx=None):
+        def deploy(target):
             assert target == "prod"
-            assert guard_ctx.request_id == "tool-req-1"
             return "deployed"
 
-        deploy("prod", guard_ctx=GuardContext(request_id="tool-req-1"))
+        guard.invoke(
+            deploy, "prod",
+            guard_ctx=GuardContext(tool="deploy", request_id="tool-req-1"),
+        )
         assert captured[0].approval_id
         assert captured[0].action_request.request_id == "tool-req-1"
         assert captured[0].action_request.tool == "deploy"

@@ -227,11 +227,11 @@ class TestSyncRejectsAsyncHandler:
 
 
 # ---------------------------------------------------------------------------
-# @guard.async_tool() decorator
+# guard.ainvoke()
 # ---------------------------------------------------------------------------
 
 
-class TestAsyncToolDecorator:
+class TestAInvokeWithApproval:
     @pytest.mark.asyncio
     async def test_async_handler_approved_executes_function(self):
         guard = GuardianAngel(
@@ -239,11 +239,10 @@ class TestAsyncToolDecorator:
             approval_handler=_AsyncAutoApproveHandler(),
         )
 
-        @guard.async_tool(name="deploy")
         async def deploy(target):
             return f"deployed {target}"
 
-        result = await deploy("prod")
+        result = await guard.ainvoke(deploy, "prod", guard_ctx=GuardContext(tool="deploy"))
         assert result == "deployed prod"
 
     @pytest.mark.asyncio
@@ -253,60 +252,55 @@ class TestAsyncToolDecorator:
             approval_handler=_AsyncRejectHandler(),
         )
 
-        @guard.async_tool(name="deploy")
         async def deploy(target):
             return f"deployed {target}"
 
         with pytest.raises(PolicyDeniedError):
-            await deploy("prod")
+            await guard.ainvoke(deploy, "prod", guard_ctx=GuardContext(tool="deploy"))
 
     @pytest.mark.asyncio
-    async def test_sync_handler_works_via_async_tool(self):
+    async def test_sync_handler_works_via_ainvoke(self):
         guard = GuardianAngel(
             rules=_require_approval_rules(),
             approval_handler=_SyncAutoApproveHandler(),
         )
 
-        @guard.async_tool(name="deploy")
         async def deploy(target):
             return f"deployed {target}"
 
-        result = await deploy("prod")
+        result = await guard.ainvoke(deploy, "prod", guard_ctx=GuardContext(tool="deploy"))
         assert result == "deployed prod"
 
     @pytest.mark.asyncio
     async def test_no_handler_raises_approval_required_error(self):
         guard = GuardianAngel(rules=_require_approval_rules())
 
-        @guard.async_tool(name="deploy")
         async def deploy(target):
             return f"deployed {target}"
 
         with pytest.raises(ApprovalRequiredError):
-            await deploy("prod")
+            await guard.ainvoke(deploy, "prod", guard_ctx=GuardContext(tool="deploy"))
 
     @pytest.mark.asyncio
-    async def test_denied_tool_raises(self):
+    async def test_denied_raises(self):
         guard = GuardianAngel(
             rules=[Rule(name="block", tool="delete", decision=DecisionStatus.DENY)]
         )
 
-        @guard.async_tool(name="delete")
         async def delete_resource(resource_id):
             return f"deleted {resource_id}"
 
         with pytest.raises(PolicyDeniedError):
-            await delete_resource("res-1")
+            await guard.ainvoke(delete_resource, "res-1", guard_ctx=GuardContext(tool="delete"))
 
     @pytest.mark.asyncio
-    async def test_allowed_tool_executes(self):
+    async def test_allowed_executes(self):
         guard = GuardianAngel(rules=[])
 
-        @guard.async_tool(name="read")
         async def read_resource(resource_id):
             return f"read {resource_id}"
 
-        result = await read_resource("res-1")
+        result = await guard.ainvoke(read_resource, "res-1")
         assert result == "read res-1"
 
     @pytest.mark.asyncio
@@ -326,23 +320,13 @@ class TestAsyncToolDecorator:
             approval_handler=CapturingAsyncHandler(),
         )
 
-        @guard.async_tool(name="deploy")
-        async def deploy(target, *, guard_ctx=None):
-            return f"deployed {target} {guard_ctx.request_id if guard_ctx else None}"
+        async def deploy(target):
+            return f"deployed {target}"
 
-        await deploy("prod", guard_ctx=GuardContext(request_id="async-tool-req-1"))
+        await guard.ainvoke(
+            deploy, "prod",
+            guard_ctx=GuardContext(tool="deploy", request_id="async-tool-req-1"),
+        )
         assert captured[0].approval_id
         assert captured[0].action_request.request_id == "async-tool-req-1"
         assert captured[0].action_request.tool == "deploy"
-
-    @pytest.mark.asyncio
-    async def test_decorator_preserves_function_name(self):
-        guard = GuardianAngel(rules=[])
-
-        @guard.async_tool(name="my_tool")
-        async def my_special_function():
-            """My docstring."""
-            return True
-
-        assert my_special_function.__name__ == "my_special_function"
-        assert my_special_function.__doc__ == "My docstring."

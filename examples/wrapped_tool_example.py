@@ -1,4 +1,4 @@
-"""Use the @guard.tool() decorator with YAML predicates."""
+"""Use guard.invoke() with YAML predicates."""
 
 import os
 from datetime import datetime, timezone
@@ -44,40 +44,22 @@ guard = GuardianAngel.from_yaml(
 )
 
 
-@guard.tool(name="resource.delete")
-def delete_resource(
-    resource_id: str,
-    *,
-    guard_ctx: GuardContext | None = None,
-):
-    return {
-        "deleted": True,
-        "resource_id": resource_id,
-        "request_id": guard_ctx.request_id if guard_ctx else None,
-        "attributes": guard_ctx.attributes if guard_ctx else {},
-    }
+def delete_resource(resource_id: str):
+    return {"deleted": True, "resource_id": resource_id}
 
 
-@guard.tool(name="resource.update")
-def update_resource(
-    resource_id: str,
-    *,
-    guard_ctx: GuardContext | None = None,
-):
-    return {
-        "updated": True,
-        "resource_id": resource_id,
-        "request_id": guard_ctx.request_id if guard_ctx else None,
-        "attributes": guard_ctx.attributes if guard_ctx else {},
-    }
+def update_resource(resource_id: str):
+    return {"updated": True, "resource_id": resource_id}
 
 
 # 1. Denied by a plain condition using value_from.
 print("1. Cross-tenant delete (condition + value_from -> deny):")
 try:
-    delete_resource(
+    guard.invoke(
+        delete_resource,
         "doc-123",
         guard_ctx=GuardContext(
+            tool="resource.delete",
             request_id="req-101",
             attributes={
                 "subject.tenant_id": "acme",
@@ -95,9 +77,11 @@ except PolicyDeniedError as e:
 # 2. Denied by nested all/any/not logic.
 print("2. Risky prod delete (all + any + not -> deny):")
 try:
-    delete_resource(
+    guard.invoke(
+        delete_resource,
         "doc-456",
         guard_ctx=GuardContext(
+            tool="resource.delete",
             request_id="req-102",
             attributes={
                 "subject.tenant_id": "acme",
@@ -114,9 +98,11 @@ except PolicyDeniedError as e:
 
 # 3. Allowed because the not-clause fails.
 print("3. Safe prod delete (not clause blocks the deny rule, so allow):")
-result = delete_resource(
+result = guard.invoke(
+    delete_resource,
     "doc-789",
     guard_ctx=GuardContext(
+        tool="resource.delete",
         request_id="req-103",
         attributes={
             "subject.tenant_id": "acme",
@@ -132,9 +118,11 @@ print(f"   Result: {result}\n")
 
 # 4. Require approval from the YAML policy — auto-approved by the handler.
 print("4. Prod update requiring approval (auto-approved via handler):")
-result = update_resource(
+result = guard.invoke(
+    update_resource,
     "doc-999",
     guard_ctx=GuardContext(
+        tool="resource.update",
         request_id="req-104",
         attributes={
             "resource.environment": "prod",

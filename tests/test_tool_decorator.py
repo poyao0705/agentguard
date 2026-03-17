@@ -15,73 +15,132 @@ def _make_guard(*rules):
     return GuardianAngel(rules=list(rules))
 
 
-class TestToolDecorator:
-    def test_allowed_tool_executes(self):
+class TestInvoke:
+    """Tests for guard.invoke() / guard.ainvoke()."""
+
+    def test_invoke_allowed(self):
         guard = _make_guard()  # no rules → default allow
 
-        @guard.tool(name="read_file")
         def read_file(path):
             return f"contents of {path}"
 
-        result = read_file("README.md")
+        result = guard.invoke(read_file, "README.md")
         assert result == "contents of README.md"
 
-    def test_denied_tool_raises(self):
+    def test_invoke_denied(self):
         guard = _make_guard(
-            Rule(name="block_delete", tool="delete_file", decision=DecisionStatus.DENY)
+            Rule(name="block_delete", tool="resource.delete", decision=DecisionStatus.DENY),
         )
 
-        @guard.tool(name="delete_file")
-        def delete_file(path):
-            _ = path
+        def delete_resource(rid):
             return "deleted"
 
         with pytest.raises(PolicyDeniedError) as exc_info:
-            delete_file("/etc/passwd")
-
-        assert exc_info.value.decision.status == DecisionStatus.DENY
+            guard.invoke(
+                delete_resource,
+                "doc-1",
+                guard_ctx=GuardContext(tool="resource.delete"),
+            )
         assert exc_info.value.decision.rule_name == "block_delete"
 
-    def test_require_approval_raises(self):
+    def test_invoke_require_approval_no_handler(self):
         guard = _make_guard(
-            Rule(name="approve_deploy", tool="deploy", decision=DecisionStatus.REQUIRE_APPROVAL)
+            Rule(name="approve_it", tool="deploy", decision=DecisionStatus.REQUIRE_APPROVAL),
         )
 
-        @guard.tool(name="deploy")
         def deploy(target):
-            _ = target
-            return "deployed"
+            return f"deployed {target}"
 
-        with pytest.raises(ApprovalRequiredError) as exc_info:
-            deploy("prod")
+        with pytest.raises(ApprovalRequiredError):
+            guard.invoke(deploy, "prod", guard_ctx=GuardContext(tool="deploy"))
 
-        assert exc_info.value.decision.status == DecisionStatus.REQUIRE_APPROVAL
-        assert exc_info.value.decision.rule_name == "approve_deploy"
+    def test_invoke_uses_function_name_when_no_tool(self):
+        guard = _make_guard(
+            Rule(name="block_it", tool="my_func", decision=DecisionStatus.DENY),
+        )
 
-    def test_attributes_from_kwargs_are_used(self):
+        def my_func():
+            return "ok"
+
+        with pytest.raises(PolicyDeniedError):
+            guard.invoke(my_func)
+
+    def test_invoke_forwards_kwargs(self):
+        guard = _make_guard()
+
+        def greet(name, *, greeting="hello"):
+            return f"{greeting} {name}"
+
+        result = guard.invoke(greet, "world", greeting="hi")
+        assert result == "hi world"
+
+    def test_invoke_with_attributes(self):
         guard = _make_guard(
             Rule(
                 name="block_prod",
                 tool="deploy",
                 decision=DecisionStatus.DENY,
                 attributes={"resource.environment": "prod"},
-            )
+            ),
         )
 
-        @guard.tool(name="deploy")
-        def deploy(target, *, guard_ctx: GuardContext | None = None):
-            _ = (target, guard_ctx)
-            return "deployed"
+        def deploy(target):
+            return f"deployed {target}"
 
-        # Should be blocked when resource.environment=prod
+        # blocked
         with pytest.raises(PolicyDeniedError):
-            deploy("app", guard_ctx=GuardContext(attributes={"resource.environment": "prod"}))
+            guard.invoke(
+                deploy,
+                "app",
+                guard_ctx=GuardContext(
+                    tool="deploy",
+                    attributes={"resource.environment": "prod"},
+                ),
+            )
 
-        # Should be allowed when resource.environment=staging (no matching rule)
-        result = deploy("app", guard_ctx=GuardContext(attributes={"resource.environment": "staging"}))
-        assert result == "deployed"
+        # allowed
+        result = guard.invoke(
+            deploy,
+            "app",
+            guard_ctx=GuardContext(
+                tool="deploy",
+                attributes={"resource.environment": "staging"},
+            ),
+        )
+        assert result == "deployed app"
 
-    def test_request_id_is_passed_into_request(self):
+    def test_invoke_approval_backend_failure_allows(self):
+        class BrokenHandler:
+            def submit(self, request):
+                raise RuntimeError("down")
+
+        guard = GuardianAngel(
+            rules=[Rule(name="approve", tool="deploy", decision=DecisionStatus.REQUIRE_APPROVAL)],
+            approval_handler=BrokenHandler(),
+            config=GuardConfig(on_approval_error=DecisionStatus.ALLOW),
+        )
+
+        def deploy(target):
+            return f"deployed {target}"
+
+        assert guard.invoke(deploy, "prod", guard_ctx=GuardContext(tool="deploy")) == "deployed prod"
+
+    def test_invoke_protected_tool_no_match_requires_approval(self):
+        guard = GuardianAngel(
+            rules=[],
+            config=GuardConfig(
+                protected_tools=frozenset({"delete_file"}),
+                protected_no_match_decision=DecisionStatus.REQUIRE_APPROVAL,
+            ),
+        )
+
+        def delete_file(path):
+            return "deleted"
+
+        with pytest.raises(ApprovalRequiredError):
+            guard.invoke(delete_file, "/tmp/x", guard_ctx=GuardContext(tool="delete_file"))
+
+    def test_invoke_request_id_is_passed(self):
         guard = _make_guard(
             Rule(
                 name="block_high_risk",
@@ -91,61 +150,54 @@ class TestToolDecorator:
             )
         )
 
-        @guard.tool(name="github.pr")
-        def merge_pr(pr_id, *, guard_ctx: GuardContext | None = None):
-            _ = (pr_id, guard_ctx)
+        def merge_pr(pr_id):
             return "merged"
 
         with pytest.raises(PolicyDeniedError):
-            merge_pr(
+            guard.invoke(
+                merge_pr,
                 "42",
                 guard_ctx=GuardContext(
+                    tool="github.pr",
                     request_id="req-42",
                     attributes={"context.risk_level": "high"},
                 ),
             )
 
-    def test_decorator_preserves_function_name(self):
+
+class TestAInvoke:
+    @pytest.mark.asyncio
+    async def test_ainvoke_allowed_sync_fn(self):
         guard = _make_guard()
 
-        @guard.tool(name="my_tool")
-        def my_special_function():
-            """My docstring."""
-            return True
+        def read_file(path):
+            return f"contents of {path}"
 
-        assert my_special_function.__name__ == "my_special_function"
-        assert my_special_function.__doc__ == "My docstring."
+        result = await guard.ainvoke(read_file, "README.md")
+        assert result == "contents of README.md"
 
-    def test_protected_tool_no_match_can_require_approval(self):
-        guard = GuardianAngel(
-            rules=[],
-            config=GuardConfig(
-                protected_tools=frozenset({"delete_file"}),
-                protected_no_match_decision=DecisionStatus.REQUIRE_APPROVAL,
-            ),
+    @pytest.mark.asyncio
+    async def test_ainvoke_allowed_async_fn(self):
+        guard = _make_guard()
+
+        async def read_file(path):
+            return f"contents of {path}"
+
+        result = await guard.ainvoke(read_file, "README.md")
+        assert result == "contents of README.md"
+
+    @pytest.mark.asyncio
+    async def test_ainvoke_denied(self):
+        guard = _make_guard(
+            Rule(name="block", tool="resource.delete", decision=DecisionStatus.DENY),
         )
 
-        @guard.tool(name="delete_file")
-        def delete_file(path):
-            _ = path
+        async def delete_resource(rid):
             return "deleted"
 
-        with pytest.raises(ApprovalRequiredError):
-            delete_file("/tmp/x")
-
-    def test_approval_backend_failure_can_allow_execution(self):
-        class BrokenHandler:
-            def submit(self, request):
-                raise RuntimeError("approval backend down")
-
-        guard = GuardianAngel(
-            rules=[Rule(name="approve_deploy", tool="deploy", decision=DecisionStatus.REQUIRE_APPROVAL)],
-            approval_handler=BrokenHandler(),
-            config=GuardConfig(on_approval_error=DecisionStatus.ALLOW),
-        )
-
-        @guard.tool(name="deploy")
-        def deploy(target):
-            return f"deployed {target}"
-
-        assert deploy("prod") == "deployed prod"
+        with pytest.raises(PolicyDeniedError):
+            await guard.ainvoke(
+                delete_resource,
+                "doc-1",
+                guard_ctx=GuardContext(tool="resource.delete"),
+            )

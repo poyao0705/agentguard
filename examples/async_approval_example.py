@@ -140,21 +140,12 @@ async def main():
         print(f"   PolicyDeniedError: {e}\n")
 
     # ---------------------------------------------------------------------------
-    # 4. @guard.async_tool() decorator
+    # 4. guard.ainvoke()
     # ---------------------------------------------------------------------------
 
-    print("=== @guard.async_tool() examples ===\n")
+    print("=== guard.ainvoke() examples ===\n")
 
-    @guard.async_tool(name="resource.update")
-    async def update_resource(resource_id, *, guard_ctx: GuardContext | None = None):
-        _ = guard_ctx
-        # Simulate async work
-        await asyncio.sleep(0.01)
-        return {"updated": True, "resource_id": resource_id}
-
-    @guard_reject.async_tool(name="resource.update")
-    async def update_resource_strict(resource_id, *, guard_ctx: GuardContext | None = None):
-        _ = guard_ctx
+    async def update_resource(resource_id):
         await asyncio.sleep(0.01)
         return {"updated": True, "resource_id": resource_id}
 
@@ -165,15 +156,27 @@ async def main():
         "subject.role": "developer",
     }
 
-    approval_ctx = GuardContext(request_id="req-async-4", attributes=approval_attrs)
+    approval_ctx = GuardContext(
+        tool="resource.update",
+        request_id="req-async-4",
+        attributes=approval_attrs,
+    )
 
     print("4. Async auto-approved → function executes:")
-    result = await update_resource("doc-1", guard_ctx=approval_ctx)
+    result = await guard.ainvoke(update_resource, "doc-1", guard_ctx=approval_ctx)
     print(f"   Result: {result}\n")
 
     print("5. Async rejected → PolicyDeniedError:")
     try:
-        await update_resource_strict("doc-2", guard_ctx=GuardContext(request_id="req-async-5", attributes=approval_attrs))
+        await guard_reject.ainvoke(
+            update_resource,
+            "doc-2",
+            guard_ctx=GuardContext(
+                tool="resource.update",
+                request_id="req-async-5",
+                attributes=approval_attrs,
+            ),
+        )
     except PolicyDeniedError as e:
         print(f"   PolicyDeniedError: {e}\n")
 
@@ -188,15 +191,17 @@ async def main():
         config=GuardConfig(on_evaluation_error=DecisionStatus.DENY),
     )
 
-    @guard_no_handler.async_tool(name="resource.update")
-    async def update_no_handler(resource_id, *, guard_ctx: GuardContext | None = None):
-        _ = guard_ctx
-        await asyncio.sleep(0.01)
-        return {"updated": True, "resource_id": resource_id}
-
     print("6. No handler registered:")
     try:
-        await update_no_handler("doc-3", guard_ctx=GuardContext(request_id="req-async-6", attributes=approval_attrs))
+        await guard_no_handler.ainvoke(
+            update_resource,
+            "doc-3",
+            guard_ctx=GuardContext(
+                tool="resource.update",
+                request_id="req-async-6",
+                attributes=approval_attrs,
+            ),
+        )
     except ApprovalRequiredError as e:
         print(f"   ApprovalRequiredError: {e}\n")
 

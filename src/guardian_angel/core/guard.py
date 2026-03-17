@@ -16,9 +16,8 @@ from .config import GuardConfig
 from .decision import Decision, DecisionSource, DecisionStatus
 from .exceptions import ApprovalBackendError, ApprovalRequiredError, PolicyDeniedError
 from .policy_engine import PolicyEngine, PolicyEvaluator
-from .request import ActionRequest
+from .request import ActionRequest, GuardContext
 from .rule import Rule
-from .tool_decorator import make_async_tool_decorator, make_tool_decorator
 from .yaml_loader import load_policy_file
 
 
@@ -225,26 +224,129 @@ class GuardianAngel:
             return self._build_fallback_approval_response(approval_request, result)
         return result
 
-    def tool(self, name: str):
-        """Decorator that wraps a sync function with policy enforcement.
+    # ------------------------------------------------------------------
+    # invoke / ainvoke – call any function under policy
+    # ------------------------------------------------------------------
+
+    def _submit_approval_for_invoke(
+        self, decision: Decision, request: ActionRequest,
+    ) -> ApprovalResponse | Decision:
+        """Handle the require_approval path synchronously."""
+        if self.approval_handler is None:
+            raise ApprovalRequiredError(decision)
+
+        if inspect.iscoroutinefunction(self.approval_handler.submit):
+            raise TypeError(
+                "approval_handler is async; use ainvoke() instead"
+            )
+
+        approval_request = ApprovalRequest(
+            action_request=request,
+            decision=decision,
+            requested_at=datetime.now(tz=timezone.utc),
+        )
+        return self.submit_approval_sync(approval_request)
+
+    async def _submit_approval_for_ainvoke(
+        self, decision: Decision, request: ActionRequest,
+    ) -> ApprovalResponse | Decision:
+        """Handle the require_approval path asynchronously."""
+        if self.approval_handler is None:
+            raise ApprovalRequiredError(decision)
+
+        approval_request = ApprovalRequest(
+            action_request=request,
+            decision=decision,
+            requested_at=datetime.now(tz=timezone.utc),
+        )
+        return await self.submit_approval_async(approval_request)
+
+    def _resolve_tool_name(self, fn, guard_ctx: GuardContext | None) -> str:
+        if guard_ctx is not None and guard_ctx.tool is not None:
+            return guard_ctx.tool
+        return getattr(fn, "__name__", str(fn))
+
+    def _build_invoke_request(
+        self, fn, guard_ctx: GuardContext | None,
+    ) -> ActionRequest:
+        name = self._resolve_tool_name(fn, guard_ctx)
+        return ActionRequest(
+            tool=name,
+            attributes=guard_ctx.attributes if guard_ctx else {},
+            request_id=guard_ctx.request_id if guard_ctx else None,
+        )
+
+    def invoke(self, fn, /, *args, guard_ctx: GuardContext | None = None, **kwargs):
+        """Call *fn* under policy enforcement without decorating it.
 
         Usage::
 
-            @guard.tool(name="resource.delete")
-            def delete_resource(resource_id, *, attributes=None):
-                ...
+            result = guard.invoke(
+                update_resource,
+                "doc-777",
+                guard_ctx=GuardContext(
+                    tool="resource.update",
+                    attributes={"resource.environment": "prod"},
+                ),
+            )
+
+        The *guard_ctx* is **not** forwarded to *fn*; the function receives
+        only ``*args`` and ``**kwargs``.
         """
+        request = self._build_invoke_request(fn, guard_ctx)
+        decision = self.authorize(request)
 
-        return make_tool_decorator(self, name)
+        if decision.status == DecisionStatus.DENY:
+            raise PolicyDeniedError(decision)
 
-    def async_tool(self, name: str):
-        """Decorator that wraps an async function with policy enforcement.
+        if decision.status == DecisionStatus.REQUIRE_APPROVAL:
+            response = self._submit_approval_for_invoke(decision, request)
+            if isinstance(response, Decision):
+                if response.status == DecisionStatus.ALLOW:
+                    return fn(*args, **kwargs)
+                if response.status == DecisionStatus.REQUIRE_APPROVAL:
+                    raise ApprovalRequiredError(response)
+                raise PolicyDeniedError(response)
+            if response.status == ApprovalStatus.APPROVED:
+                return fn(*args, **kwargs)
+            raise PolicyDeniedError(
+                self.decision_for_approval_response(decision, response)
+            )
 
-        Usage::
+        return fn(*args, **kwargs)
 
-            @guard.async_tool(name="resource.delete")
-            async def delete_resource(resource_id, *, attributes=None):
-                ...
+    async def ainvoke(
+        self, fn, /, *args, guard_ctx: GuardContext | None = None, **kwargs,
+    ):
+        """Async version of :meth:`invoke`.
+
+        If *fn* is a coroutine function it is awaited; otherwise it is called
+        synchronously.
         """
+        request = self._build_invoke_request(fn, guard_ctx)
+        decision = self.authorize(request)
 
-        return make_async_tool_decorator(self, name)
+        if decision.status == DecisionStatus.DENY:
+            raise PolicyDeniedError(decision)
+
+        if decision.status == DecisionStatus.REQUIRE_APPROVAL:
+            response = await self._submit_approval_for_ainvoke(decision, request)
+            if isinstance(response, Decision):
+                if response.status == DecisionStatus.ALLOW:
+                    if inspect.iscoroutinefunction(fn):
+                        return await fn(*args, **kwargs)
+                    return fn(*args, **kwargs)
+                if response.status == DecisionStatus.REQUIRE_APPROVAL:
+                    raise ApprovalRequiredError(response)
+                raise PolicyDeniedError(response)
+            if response.status == ApprovalStatus.APPROVED:
+                if inspect.iscoroutinefunction(fn):
+                    return await fn(*args, **kwargs)
+                return fn(*args, **kwargs)
+            raise PolicyDeniedError(
+                self.decision_for_approval_response(decision, response)
+            )
+
+        if inspect.iscoroutinefunction(fn):
+            return await fn(*args, **kwargs)
+        return fn(*args, **kwargs)

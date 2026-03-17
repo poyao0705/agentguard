@@ -134,22 +134,18 @@ print(
 print()
 
 
-print("=== 4. Use the same guard in a tool wrapper ===\n")
+print("=== 4. Use guard.invoke() to call a plain function under policy ===\n")
 
 
-@guard.tool(name="resource.update")
-def update_resource(resource_id: str, *, guard_ctx: GuardContext | None = None):
-    return {
-        "updated": True,
-        "resource_id": resource_id,
-        "request_id": guard_ctx.request_id if guard_ctx else None,
-        "attributes": guard_ctx.attributes if guard_ctx else {},
-    }
+def update_resource(resource_id: str):
+    return {"updated": True, "resource_id": resource_id}
 
 
-tool_result = update_resource(
+tool_result = guard.invoke(
+    update_resource,
     "doc-777",
     guard_ctx=GuardContext(
+        tool="resource.update",
         request_id="req-pipeline-005",
         attributes={
             "resource.environment": "prod",
@@ -159,23 +155,23 @@ tool_result = update_resource(
         },
     ),
 )
-print(f"decorated tool result: {tool_result}")
+print(f"invoke result: {tool_result}")
 print()
 
 
 print("=== 5. Denial still blocks execution ===\n")
 
 
-@guard.tool(name="resource.delete")
-def delete_resource(resource_id: str, *, guard_ctx: GuardContext | None = None):
-    _ = guard_ctx
+def delete_resource(resource_id: str):
     return {"deleted": True, "resource_id": resource_id}
 
 
 try:
-    delete_resource(
+    guard.invoke(
+        delete_resource,
         "doc-888",
         guard_ctx=GuardContext(
+            tool="resource.delete",
             request_id="req-pipeline-006",
             attributes={
                 "subject.tenant_id": "acme",
