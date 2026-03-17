@@ -42,7 +42,7 @@ class _AutoApproveHandler:
 
     def submit(self, request: ApprovalRequest) -> ApprovalResponse:
         return ApprovalResponse(
-            request_id=request.request_id,
+            approval_id=request.approval_id,
             status=ApprovalStatus.APPROVED,
             approved_by="auto",
             responded_at=datetime.now(tz=timezone.utc),
@@ -54,7 +54,7 @@ class _RejectHandler:
 
     def submit(self, request: ApprovalRequest) -> ApprovalResponse:
         return ApprovalResponse(
-            request_id=request.request_id,
+            approval_id=request.approval_id,
             status=ApprovalStatus.REJECTED,
             approved_by="auto",
             reason="rejected by policy",
@@ -67,7 +67,7 @@ class _ExpireHandler:
 
     def submit(self, request: ApprovalRequest) -> ApprovalResponse:
         return ApprovalResponse(
-            request_id=request.request_id,
+            approval_id=request.approval_id,
             status=ApprovalStatus.EXPIRED,
         )
 
@@ -95,20 +95,28 @@ class TestApprovalStatus:
 class TestApprovalRequest:
     def _make(self, **kwargs):
         defaults = dict(
-            request_id="req-1",
             action_request=ActionRequest(tool="deploy"),
             decision=Decision(status=DecisionStatus.REQUIRE_APPROVAL),
             requested_at=datetime.now(tz=timezone.utc),
+            approval_id="approval-1",
         )
         defaults.update(kwargs)
         return ApprovalRequest(**defaults)
 
     def test_construction(self):
         req = self._make()
-        assert req.request_id == "req-1"
+        assert req.approval_id == "approval-1"
         assert req.action_request.tool == "deploy"
         assert req.decision.status == DecisionStatus.REQUIRE_APPROVAL
         assert isinstance(req.requested_at, datetime)
+
+    def test_approval_id_defaults_to_uuid(self):
+        req = ApprovalRequest(
+            action_request=ActionRequest(tool="deploy"),
+            decision=Decision(status=DecisionStatus.REQUIRE_APPROVAL),
+            requested_at=datetime.now(tz=timezone.utc),
+        )
+        assert req.approval_id
 
     def test_approvers_default_empty(self):
         req = self._make()
@@ -126,12 +134,12 @@ class TestApprovalRequest:
 
 class TestApprovalResponse:
     def test_required_fields(self):
-        resp = ApprovalResponse(request_id="req-1", status=ApprovalStatus.APPROVED)
-        assert resp.request_id == "req-1"
+        resp = ApprovalResponse(approval_id="approval-1", status=ApprovalStatus.APPROVED)
+        assert resp.approval_id == "approval-1"
         assert resp.status == ApprovalStatus.APPROVED
 
     def test_defaults(self):
-        resp = ApprovalResponse(request_id="req-1", status=ApprovalStatus.APPROVED)
+        resp = ApprovalResponse(approval_id="approval-1", status=ApprovalStatus.APPROVED)
         assert resp.approved_by is None
         assert resp.reason is None
         assert resp.conditions == {}
@@ -140,7 +148,7 @@ class TestApprovalResponse:
     def test_all_fields(self):
         now = datetime.now(tz=timezone.utc)
         resp = ApprovalResponse(
-            request_id="req-2",
+            approval_id="approval-2",
             status=ApprovalStatus.REJECTED,
             approved_by="alice",
             reason="too risky",
@@ -163,7 +171,7 @@ class TestApprovalHandlerProtocol:
         class MyHandler:
             def submit(self, request: ApprovalRequest) -> ApprovalResponse:
                 return ApprovalResponse(
-                    request_id=request.request_id,
+                    approval_id=request.approval_id,
                     status=ApprovalStatus.APPROVED,
                 )
 
@@ -196,7 +204,8 @@ class TestRequestApproval:
         request = ActionRequest(tool="deploy", request_id="req-42")
         response = guard.request_approval(request)
         assert response.status == ApprovalStatus.APPROVED
-        assert response.request_id == "req-42"
+        assert response.approval_id
+        assert response.approval_id != "req-42"
 
     def test_rejected_returns_response(self):
         guard = GuardianAngel(
@@ -225,14 +234,14 @@ class TestRequestApproval:
             guard.request_approval(ActionRequest(tool="nuke"))
         assert exc_info.value.decision.status == DecisionStatus.DENY
 
-    def test_request_id_from_action_request_used(self):
+    def test_action_request_id_preserved_and_approval_id_is_distinct(self):
         submitted = []
 
         class CapturingHandler:
             def submit(self, request: ApprovalRequest) -> ApprovalResponse:
                 submitted.append(request)
                 return ApprovalResponse(
-                    request_id=request.request_id,
+                    approval_id=request.approval_id,
                     status=ApprovalStatus.APPROVED,
                 )
 
@@ -241,16 +250,17 @@ class TestRequestApproval:
             approval_handler=CapturingHandler(),
         )
         guard.request_approval(ActionRequest(tool="deploy", request_id="my-id"))
-        assert submitted[0].request_id == "my-id"
+        assert submitted[0].action_request.request_id == "my-id"
+        assert submitted[0].approval_id != "my-id"
 
-    def test_uuid_generated_when_no_request_id(self):
+    def test_approval_id_generated_when_not_provided(self):
         submitted = []
 
         class CapturingHandler:
             def submit(self, request: ApprovalRequest) -> ApprovalResponse:
                 submitted.append(request)
                 return ApprovalResponse(
-                    request_id=request.request_id,
+                    approval_id=request.approval_id,
                     status=ApprovalStatus.APPROVED,
                 )
 
@@ -259,7 +269,16 @@ class TestRequestApproval:
             approval_handler=CapturingHandler(),
         )
         guard.request_approval(ActionRequest(tool="deploy"))
-        assert submitted[0].request_id  # truthy, non-empty UUID string
+        assert submitted[0].approval_id
+
+    def test_explicit_approval_id_is_supported(self):
+        req = ApprovalRequest(
+            action_request=ActionRequest(tool="deploy"),
+            decision=Decision(status=DecisionStatus.REQUIRE_APPROVAL),
+            requested_at=datetime.now(tz=timezone.utc),
+            approval_id="approval-123",
+        )
+        assert req.approval_id == "approval-123"
 
 
 # ---------------------------------------------------------------------------
@@ -304,6 +323,7 @@ class TestToolDecoratorWithApproval:
 
         @guard.tool(name="deploy")
         def deploy(target):
+            assert target == "prod"
             return f"deployed {target}"
 
         result = deploy("prod")
@@ -317,6 +337,7 @@ class TestToolDecoratorWithApproval:
 
         @guard.tool(name="deploy")
         def deploy(target):
+            assert target == "prod"
             return "deployed"
 
         with pytest.raises(PolicyDeniedError):
@@ -330,6 +351,7 @@ class TestToolDecoratorWithApproval:
 
         @guard.tool(name="deploy")
         def deploy(target):
+            assert target == "prod"
             return "deployed"
 
         with pytest.raises(PolicyDeniedError):
@@ -352,7 +374,7 @@ class TestToolDecoratorWithApproval:
             def submit(self, request: ApprovalRequest) -> ApprovalResponse:
                 captured.append(request)
                 return ApprovalResponse(
-                    request_id=request.request_id,
+                    approval_id=request.approval_id,
                     status=ApprovalStatus.APPROVED,
                 )
 
@@ -363,8 +385,11 @@ class TestToolDecoratorWithApproval:
 
         @guard.tool(name="deploy")
         def deploy(target, *, request_id=None):
+            assert target == "prod"
+            assert request_id == "tool-req-1"
             return "deployed"
 
         deploy("prod", request_id="tool-req-1")
-        assert captured[0].request_id == "tool-req-1"
+        assert captured[0].approval_id
+        assert captured[0].action_request.request_id == "tool-req-1"
         assert captured[0].action_request.tool == "deploy"

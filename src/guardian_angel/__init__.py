@@ -1,4 +1,4 @@
-from .core.approval import ApprovalHandler, ApprovalRequest, ApprovalResponse, ApprovalStatus
+from .core.approval import ApprovalHandler, AsyncApprovalHandler, ApprovalRequest, ApprovalResponse, ApprovalStatus
 from .core.decision import DecisionStatus, Decision
 from .core.exceptions import (
     GuardianAngelError,
@@ -13,6 +13,7 @@ from .core.rule import Rule
 
 __all__ = [
     "ApprovalHandler",
+    "AsyncApprovalHandler",
     "ApprovalRequest",
     "ApprovalResponse",
     "ApprovalStatus",

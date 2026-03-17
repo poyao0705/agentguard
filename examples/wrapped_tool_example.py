@@ -1,12 +1,36 @@
 """Use the @guard.tool() decorator with YAML predicates."""
 
 import os
+from datetime import datetime, timezone
 
-from guardian_angel import ApprovalRequiredError, GuardianAngel, PolicyDeniedError
+from guardian_angel import (
+    ApprovalRequest,
+    ApprovalResponse,
+    ApprovalStatus,
+    GuardianAngel,
+    PolicyDeniedError,
+)
 
-# Load policy from YAML
+
+# A simple handler that auto-approves every request.
+class AutoApproveHandler:
+    def submit(self, request: ApprovalRequest) -> ApprovalResponse:
+        print(
+            f"   [auto-approve] approval_id={request.approval_id} "
+            f"action_request_id={request.action_request.request_id}"
+        )
+        return ApprovalResponse(
+            approval_id=request.approval_id,
+            status=ApprovalStatus.APPROVED,
+            approved_by="auto",
+            responded_at=datetime.now(tz=timezone.utc),
+        )
+
+
+# Load policy from YAML — with an approval handler so require_approval
+# decisions are routed through it instead of raising ApprovalRequiredError.
 policy_path = os.path.join(os.path.dirname(__file__), "policy.yaml")
-guard = GuardianAngel.from_yaml(policy_path)
+guard = GuardianAngel.from_yaml(policy_path, approval_handler=AutoApproveHandler())
 
 
 @guard.tool(name="resource.delete")
@@ -91,18 +115,16 @@ result = delete_resource(
 )
 print(f"   Result: {result}\n")
 
-# 4. Require approval from the YAML policy.
-print("4. Prod update requiring approval (all + any + not -> require_approval):")
-try:
-    update_resource(
-        "doc-999",
-        request_id="req-104",
-        attributes={
-            "resource.environment": "prod",
-            "context.change_type": "permissions",
-            "context.risk_score": 5,
-            "subject.role": "developer",
-        },
-    )
-except ApprovalRequiredError as e:
-    print(f"   Approval required: {e}")
+# 4. Require approval from the YAML policy — auto-approved by the handler.
+print("4. Prod update requiring approval (auto-approved via handler):")
+result = update_resource(
+    "doc-999",
+    request_id="req-104",
+    attributes={
+        "resource.environment": "prod",
+        "context.change_type": "permissions",
+        "context.risk_score": 5,
+        "subject.role": "developer",
+    },
+)
+print(f"   Result: {result}")

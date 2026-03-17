@@ -1,6 +1,6 @@
 [project]
 name = "guardian-angel"
-version = "0.3.0"
+version = "0.4.0"
 description = "Policy engine for governing AI agent tool execution."
 readme = "README.md"
 license = { text = "MIT" }
